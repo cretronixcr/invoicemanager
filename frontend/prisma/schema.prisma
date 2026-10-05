@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("ADMIN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Customer {
+  id           String      @id @default(cuid())
+  customerCode String      @unique // e.g. 000080
+  name         String
+  companyName  String?
+  address      String
+  city         String
+  phone        String
+  email        String?
+  notes        String?
+  quotations   Quotation[]
+  invoices     Invoice[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model Product {
+  id             String          @id @default(cuid())
+  productCode    String?
+  name           String
+  description    String?
+  category       String          @default("General") // e.g. Cameras, NVR, Cables, Installation
+  unit           String          @default("Pcs") // Pcs, Mtr, Box, Job
+  rate           Float           @default(0)
+  warranty       String?
+  notes          String?
+  quotationItems QuotationItem[]
+  invoiceItems   InvoiceItem[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model Quotation {
+  id              String          @id @default(cuid())
+  quotationNumber String          @unique // e.g. 0000200 or QT-000200
+  customerId      String
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  date            DateTime        @default(now())
+  subtotal        Float           @default(0)
+  discount        Float           @default(0)
+  tax             Float           @default(0)
+  total           Float           @default(0)
+  status          String          @default("Pending") // Draft, Sent, Accepted, Converted, Rejected
+  notes           String?
+  items           QuotationItem[]
+  invoices        Invoice[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model QuotationItem {
+  id           String    @id @default(cuid())
+  quotationId  String
+  quotation    Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  productId    String?
+  product      Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  section      String?   // A - Cameras, B - NVR, C - Installation
+  serialNumber Int       @default(1)
+  description  String
+  quantity     Float     @default(1)
+  rate         Float     @default(0)
+  amount       Float     @default(0)
+}
+
+model Invoice {
+  id                String        @id @default(cuid())
+  invoiceNumber     String        @unique // e.g. INV-000001
+  quotationId       String?
+  quotation         Quotation?    @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  customerId        String
+  customer          Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  invoiceDate       DateTime      @default(now())
+  dueDate           DateTime?
+  referenceNumber   String?
+  subtotal          Float         @default(0)
+  discount          Float         @default(0)
+  additionalCharges Float         @default(0)
+  tax               Float         @default(0)
+  total             Float         @default(0)
+  advance           Float         @default(0)
+  paidAmount        Float         @default(0)
+  balance           Float         @default(0)
+  status            String        @default("Issued") // Draft, Issued, Partially Paid, Paid, Overdue, Cancelled
+  notes             String?
+  items             InvoiceItem[]
+  payments          Payment[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model InvoiceItem {
+  id           String   @id @default(cuid())
+  invoiceId    String
+  invoice      Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId    String?
+  product      Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  section      String?  // e.g. A - Cameras, B - NVR, C - Installation / Services
+  serialNumber Int      @default(1)
+  description  String
+  quantity     Float    @default(1)
+  rate         Float    @default(0)
+  amount       Float    @default(0)
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  paymentNumber String   @unique // e.g. PAY-000001
+  invoiceId     String
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount        Float
+  paymentDate   DateTime @default(now())
+  paymentMethod String   @default("Cash") // Cash, Bank Transfer, Cheque, Other
+  reference     String?
+  notes         String?
+  createdAt     DateTime @default(now())
+}
+
+model BusinessSettings {
+  id                    String   @id @default("default")
+  businessName          String   @default("DANI BROTHERS")
+  logo                  String?
+  address               String   @default("Shop B-13 Sector Z-6 Gulshan e Maymar")
+  city                  String   @default("Sindh, Karachi")
+  phone                 String   @default("0333 1360441")
+  email                 String   @default("sales@danibrothers.com")
+  website               String?  @default("www.danibrothers.com")
+  invoicePrefix         String   @default("INV-")
+  startingInvoiceNumber Int      @default(1)
+  quotationPrefix       String   @default("QT-")
+  startingQuotationNum  Int      @default(200)
+  customerPrefix        String   @default("CUST-")
+  startingCustomerNum   Int      @default(80)
+  currency              String   @default("PKR")
+  defaultPaymentTerms   String?  @default("Payment due upon completion / invoice issue.")
+  defaultNotes          String?  @default("Thank you for your business. All equipment carries manufacturer warranty.")
+  footerText            String?  @default("This is a computer-generated invoice.")
+  updatedAt             DateTime @updatedAt
+}

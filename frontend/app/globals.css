@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans, Arial, Helvetica, sans-serif);
+}
+
+/* ---------- App-wide UI polish (never reaches #invoice-pdf-template) ---------- */
+
+/* Branded text selection */
+::selection {
+  background: #c7d2fe;
+  color: #1e1b4b;
+}
+
+/* Consistent keyboard focus ring across the app */
+:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+/* Tailwind v4 preflight gives buttons the default cursor — restore the pointer */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+/* Thin, unobtrusive scrollbars for panels and tables */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #a3a3a3 transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #c4c4c4;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #a3a3a3;
+}
+
+/* Subtle page-transition motion (re-mounts via key={pathname} in AppShell) */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .page-enter {
+    animation: page-enter 0.22s ease-out;
+  }
+}
+
+/*
+ * Hex fallback for the invoice PDF template.
+ * Tailwind v4 emits lab()/color-mix() colors inside @supports blocks.
+ * html2canvas (used by lib/pdf-generator.ts) cannot parse those, so the
+ * exported PDF loses backgrounds/borders/text colors. Redefining the theme
+ * variables with plain hex on the template subtree keeps the on-screen look
+ * identical while making every computed color a plain rgb() the canvas
+ * renderer understands.
+ */
+#invoice-pdf-template {
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a1a1a1;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #404040;
+  --color-neutral-800: #262626;
+  --color-neutral-900: #171717;
+  --color-neutral-950: #0a0a0a;
+
+  --color-emerald-50: #ecfdf5;
+  --color-emerald-100: #d0fae5;
+  --color-emerald-200: #a4f4cf;
+  --color-emerald-300: #5ee9b5;
+  --color-emerald-500: #00bb7f;
+  --color-emerald-600: #009767;
+  --color-emerald-700: #007956;
+  --color-emerald-800: #005f46;
+  --color-emerald-900: #004e3b;
+
+  --color-amber-100: #fef3c6;
+  --color-amber-200: #fee685;
+  --color-amber-300: #ffd236;
+  --color-amber-500: #f99c00;
+  --color-amber-600: #dd7400;
+  --color-amber-800: #953d00;
+
+  --color-rose-50: #fff1f2;
+  --color-rose-600: #e70044;
+  --color-rose-700: #c20039;
+
+  --color-indigo-50: #eef2ff;
+  --color-indigo-100: #e0e7ff;
+  --color-indigo-500: #625fff;
+  --color-indigo-600: #4f39f6;
+  --color-indigo-700: #432dd7;
+  --color-indigo-800: #372aac;
+}
