@@ -174,7 +174,8 @@ function NewInvoicePageInner() {
       setItems((prev) => {
         const updated = [...prev];
         const qty = updated[index].quantity || 1;
-        const lineAmount = toDecimalSafe(qty * selected.rate);
+        const rate = updated[index].rate || 0;
+        const lineAmount = toDecimalSafe(qty * rate);
         updated[index] = {
           ...updated[index],
           productId: selected.id,
@@ -182,7 +183,6 @@ function NewInvoicePageInner() {
           description: selected.description
             ? `${selected.name}\n${selected.description}`
             : selected.name,
-          rate: selected.rate,
           amount: lineAmount,
         };
         return updated;
