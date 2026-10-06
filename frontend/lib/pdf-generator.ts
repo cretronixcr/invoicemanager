@@ -72,7 +72,7 @@ export async function generateInvoicePDF(elementId: string, filename: string = "
   pdf.save(filename);
 }
 
-export function printInvoiceElement(elementId: string) {
+export function printInvoiceElement(elementId: string, title: string = "Print Invoice") {
   const element = document.getElementById(elementId);
   if (!element) return;
 
@@ -86,7 +86,7 @@ export function printInvoiceElement(elementId: string) {
     <!DOCTYPE html>
     <html>
       <head>
-        <title>Print Invoice</title>
+        <title>${title}</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
           @page { size: A4; margin: 10mm; }

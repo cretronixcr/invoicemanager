@@ -1,16 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { formatCurrency, formatDate } from "@/lib/utils";
-import { Users, Plus, Search, Edit, Trash2, Phone, Mail, MapPin } from "lucide-react";
+import { useEffect, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Users, Plus, Search, Edit, Trash2, Phone, Mail, MapPin, Download } from "lucide-react";
 
-export default function CustomersPage() {
-  const [customers, setCustomers] = useState<any[]>([]);
+const PAGE_SIZE = 20;
+
+type Customer = {
+  id: string;
+  customerCode: string;
+  name: string;
+  companyName?: string | null;
+  address: string;
+  city: string;
+  phone: string;
+  email?: string | null;
+  notes?: string | null;
+  _count?: { invoices: number; quotations: number };
+};
+
+function CustomersPageInner() {
+  const searchParams = useSearchParams();
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("search") || "");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [showModal, setShowModal] = useState(false);
-  const [editingCustomer, setEditingCustomer] = useState<any>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // Form states
   const [name, setName] = useState("");
@@ -23,10 +41,15 @@ export default function CustomersPage() {
 
   const fetchCustomers = async () => {
     try {
-      const res = await fetch(`/api/customers?search=${encodeURIComponent(search)}`);
+      const res = await fetch(
+        `/api/customers?search=${encodeURIComponent(search)}&page=${page}&pageSize=${PAGE_SIZE}`
+      );
       const data = await res.json();
       if (data.success) {
         setCustomers(data.customers);
+        setTotal(
+          typeof data.total === "number" ? data.total : data.customers.length
+        );
       }
     } catch (e) {
       console.error(e);
@@ -36,8 +59,29 @@ export default function CustomersPage() {
   };
 
   useEffect(() => {
-    fetchCustomers();
-  }, [search]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/customers?search=${encodeURIComponent(search)}&page=${page}&pageSize=${PAGE_SIZE}`
+        );
+        const data = await res.json();
+        if (!cancelled && data.success) {
+          setCustomers(data.customers);
+          setTotal(
+            typeof data.total === "number" ? data.total : data.customers.length
+          );
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [search, page]);
 
   const handleOpenAdd = () => {
     setEditingCustomer(null);
@@ -51,7 +95,7 @@ export default function CustomersPage() {
     setShowModal(true);
   };
 
-  const handleOpenEdit = (c: any) => {
+  const handleOpenEdit = (c: Customer) => {
     setEditingCustomer(c);
     setName(c.name);
     setCompanyName(c.companyName || "");
@@ -92,8 +136,8 @@ export default function CustomersPage() {
       } else {
         alert(data.error || "Failed to save customer");
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to save customer");
     }
   };
 
@@ -124,7 +168,14 @@ export default function CustomersPage() {
             Maintain client records, address books, and view associated billing history.
           </p>
         </div>
-        <div>
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/reports/export?type=customers"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white ring-1 ring-neutral-300 hover:bg-neutral-50 text-neutral-700 font-semibold text-xs rounded-xl transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export CSV</span>
+          </a>
           <button
             onClick={handleOpenAdd}
             className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-sm shadow-indigo-600/30 transition-all active:translate-y-px"
@@ -142,13 +193,16 @@ export default function CustomersPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             placeholder="Search by name, ID, phone, company..."
             className="w-full pl-9 pr-4 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-800 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all"
           />
         </div>
         <span className="text-neutral-500 font-medium">
-          Total Customers: {customers.length}
+          Total Customers: {total}
         </span>
       </div>
 
@@ -230,6 +284,31 @@ export default function CustomersPage() {
           ))
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 text-xs">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="px-4 py-2 bg-white ring-1 ring-neutral-300 hover:bg-neutral-50 text-neutral-700 font-semibold rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ← Previous
+          </button>
+          <span className="text-neutral-500 font-medium">
+            Page {Math.min(page, totalPages)} of {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+            className="px-4 py-2 bg-white ring-1 ring-neutral-300 hover:bg-neutral-50 text-neutral-700 font-semibold rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next →
+          </button>
+        </div>
+      )}
 
       {/* Customer Modal */}
       {showModal && (
@@ -358,5 +437,20 @@ export default function CustomersPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CustomersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center gap-2 min-h-screen text-neutral-400 text-xs">
+          <span className="h-4 w-4 rounded-full border-2 border-neutral-300 border-t-indigo-600 animate-spin inline-block" />{" "}
+          Loading customers...
+        </div>
+      }
+    >
+      <CustomersPageInner />
+    </Suspense>
   );
 }

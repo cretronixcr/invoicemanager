@@ -4,15 +4,14 @@ import { useEffect, useState, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { formatCurrency, toDecimalSafe } from "@/lib/utils";
+import { useCurrency } from "@/lib/currency";
 import { InvoicePDFTemplate } from "@/components/invoice/InvoicePDFTemplate";
 import {
   ArrowLeft,
-  Plus,
   Trash2,
   Save,
   Eye,
   FileCheck,
-  Zap,
   Users,
   Package,
 } from "lucide-react";
@@ -26,16 +25,65 @@ interface ItemRow {
   amount: number;
 }
 
+type CustomerOption = {
+  id: string;
+  name: string;
+  companyName?: string | null;
+  customerCode: string;
+  address: string;
+  city: string;
+  phone: string;
+};
+
+type ProductOption = {
+  id: string;
+  name: string;
+  description?: string | null;
+  category: string;
+  rate: number;
+};
+
+type SettingsInfo = React.ComponentProps<typeof InvoicePDFTemplate>["settings"];
+
+type LoadedInvoiceItem = {
+  productId?: string | null;
+  section?: string | null;
+  description: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+};
+
+type LoadedQuotation = {
+  id: string;
+  customerId: string;
+  quotationNumber: string;
+  discount: number;
+  tax: number;
+  notes: string | null;
+  items: LoadedInvoiceItem[];
+};
+
 function NewInvoicePageInner() {
   const router = useRouter();
+  const currency = useCurrency();
   const searchParams = useSearchParams();
   const isQuick = searchParams.get("quick") === "true";
   const duplicateId = searchParams.get("duplicateId");
   const quotationId = searchParams.get("quotationId");
+  const editId = searchParams.get("editId");
+  const isEdit = Boolean(editId);
 
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
-  const [settings, setSettings] = useState<any>(null);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [settings, setSettings] = useState<SettingsInfo | null>(null);
+
+  // Edit mode metadata (invoice number + loading)
+  const [editing, setEditing] = useState<{ id: string; invoiceNumber: string } | null>(
+    null
+  );
+  const [editLoading, setEditLoading] = useState(isEdit);
+  const [editError, setEditError] = useState("");
 
   // Form states
   const [customerId, setCustomerId] = useState("");
@@ -71,6 +119,7 @@ function NewInvoicePageInner() {
   const [newCustCity, setNewCustCity] = useState("Karachi");
   const [newCustPhone, setNewCustPhone] = useState("");
 
+  // Runs once on mount: seeds customer/settings defaults on fresh opens.
   useEffect(() => {
     // Fetch initial setup data
     Promise.all([
@@ -80,23 +129,72 @@ function NewInvoicePageInner() {
     ]).then(([custData, prodData, settData]) => {
       if (custData.success) {
         setCustomers(custData.customers);
-        if (custData.customers.length > 0 && !customerId) {
+        // In edit mode the invoice's own customer is loaded separately —
+        // don't let this default overwrite it.
+        if (custData.customers.length > 0 && !customerId && !editId) {
           setCustomerId(custData.customers[0].id);
         }
       }
       if (prodData.success) setProducts(prodData.products);
       if (settData.success) {
         setSettings(settData.settings);
-        if (settData.settings.defaultNotes) {
+        if (settData.settings.defaultNotes && !editId) {
           setNotes(settData.settings.defaultNotes);
         }
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle duplicate or convert from quotation
+  // Handle edit / duplicate / convert from quotation
   useEffect(() => {
-    if (duplicateId) {
+    if (editId) {
+      fetch(`/api/invoices/${editId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success && data.invoice) {
+            const inv = data.invoice;
+            setEditing({ id: inv.id, invoiceNumber: inv.invoiceNumber });
+            setCustomerId(inv.customerId);
+            setReferenceNumber(inv.referenceNumber || "");
+            setQuotationNumber(inv.quotation?.quotationNumber || "");
+            setInvoiceDate(new Date(inv.invoiceDate).toISOString().split("T")[0]);
+            setDueDate(
+              inv.dueDate ? new Date(inv.dueDate).toISOString().split("T")[0] : ""
+            );
+            setDiscount(inv.discount || 0);
+            setAdditionalCharges(inv.additionalCharges || 0);
+            setTax(inv.tax || 0);
+            setAdvance(inv.advance || 0);
+            setNotes(inv.notes || "");
+            if (inv.items && inv.items.length > 0) {
+              setItems(
+                inv.items.map(
+                  (it: {
+                    productId?: string | null;
+                    section?: string | null;
+                    description: string;
+                    quantity: number;
+                    rate: number;
+                    amount: number;
+                  }) => ({
+                    productId: it.productId || undefined,
+                    section: it.section || "",
+                    description: it.description,
+                    quantity: it.quantity,
+                    rate: it.rate,
+                    amount: it.amount,
+                  })
+                )
+              );
+            }
+          } else {
+            setEditError(data.error || "Invoice not found");
+          }
+        })
+        .catch(() => setEditError("Failed to load invoice"))
+        .finally(() => setEditLoading(false));
+    } else if (duplicateId) {
       fetch(`/api/invoices/${duplicateId}`)
         .then((r) => r.json())
         .then((data) => {
@@ -111,7 +209,7 @@ function NewInvoicePageInner() {
             setNotes(inv.notes || "");
             if (inv.items && inv.items.length > 0) {
               setItems(
-                inv.items.map((it: any) => ({
+                inv.items.map((it: LoadedInvoiceItem) => ({
                   productId: it.productId || undefined,
                   section: it.section || "",
                   description: it.description,
@@ -128,7 +226,7 @@ function NewInvoicePageInner() {
         .then((r) => r.json())
         .then((data) => {
           if (data.success) {
-            const qt = data.quotations.find((q: any) => q.id === quotationId);
+            const qt = data.quotations.find((q: LoadedQuotation) => q.id === quotationId);
             if (qt) {
               setCustomerId(qt.customerId);
               setQuotationNumber(qt.quotationNumber);
@@ -137,7 +235,7 @@ function NewInvoicePageInner() {
               setNotes(qt.notes || "");
               if (qt.items && qt.items.length > 0) {
                 setItems(
-                  qt.items.map((it: any) => ({
+                  qt.items.map((it: LoadedInvoiceItem) => ({
                     productId: it.productId || undefined,
                     section: it.section || "",
                     description: it.description,
@@ -151,10 +249,10 @@ function NewInvoicePageInner() {
           }
         });
     }
-  }, [duplicateId, quotationId]);
+  }, [duplicateId, quotationId, editId]);
 
   // Handle Item Row changes
-  const updateItem = (index: number, field: keyof ItemRow, value: any) => {
+  const updateItem = (index: number, field: keyof ItemRow, value: string | number) => {
     setItems((prev) => {
       const updated = [...prev];
       const item = { ...updated[index], [field]: value };
@@ -257,8 +355,8 @@ function NewInvoicePageInner() {
       } else {
         alert(data.error || "Failed to add customer");
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Request failed");
     }
   };
 
@@ -299,8 +397,8 @@ function NewInvoicePageInner() {
         notes: notes || null,
       };
 
-      const res = await fetch("/api/invoices", {
-        method: "POST",
+      const res = await fetch(isEdit ? `/api/invoices/${editId}` : "/api/invoices", {
+        method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -311,12 +409,41 @@ function NewInvoicePageInner() {
       } else {
         alert(data.error || "Failed to save invoice.");
       }
-    } catch (err: any) {
-      alert(err.message || "Failed to submit invoice");
+    } catch (err) {
+      alert(
+        err instanceof Error ? err.message : "Failed to submit invoice"
+      );
     } finally {
       setSaving(false);
     }
   };
+
+  if (editLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 min-h-[50vh] text-neutral-400 text-xs">
+        <span className="h-5 w-5 rounded-full border-2 border-neutral-300 border-t-indigo-600 animate-spin inline-block" />
+        Loading invoice for editing...
+      </div>
+    );
+  }
+
+  if (editError) {
+    return (
+      <div className="max-w-md mx-auto mt-12 bg-white p-8 rounded-2xl border border-neutral-200 shadow-sm text-center">
+        <p className="text-sm font-semibold text-neutral-800 mb-1">
+          Cannot edit invoice
+        </p>
+        <p className="text-xs text-neutral-500 mb-4">{editError}</p>
+        <Link
+          href="/invoices"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Invoices
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
@@ -324,22 +451,35 @@ function NewInvoicePageInner() {
       <div className="flex flex-wrap items-center justify-between gap-4 bg-gradient-to-br from-white via-white to-indigo-50 p-6 rounded-2xl border border-neutral-200 shadow-sm">
         <div className="flex items-center gap-3">
           <Link
-            href="/invoices"
+            href={isEdit ? `/invoices/${editId}` : "/invoices"}
             className="p-2 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
             <h1 className="text-base font-bold text-neutral-900 flex items-center gap-2">
-              <span>{isQuick ? "Quick Invoice Creation" : "Create New Invoice"}</span>
-              {isQuick && (
+              <span>
+                {isEdit
+                  ? `Edit Invoice ${editing?.invoiceNumber || ""}`
+                  : isQuick
+                  ? "Quick Invoice Creation"
+                  : "Create New Invoice"}
+              </span>
+              {isEdit && (
+                <span className="bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
+                  Edit Mode
+                </span>
+              )}
+              {isQuick && !isEdit && (
                 <span className="bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
                   Fast Mode
                 </span>
               )}
             </h1>
             <p className="text-xs text-neutral-500">
-              Configure customer, technical items, and financial values.
+              {isEdit
+                ? "Update customer, items, or financial values. Invoice number stays unchanged."
+                : "Configure customer, technical items, and financial values."}
             </p>
           </div>
         </div>
@@ -361,7 +501,13 @@ function NewInvoicePageInner() {
             className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm shadow-indigo-600/30 transition-all active:translate-y-px disabled:opacity-60"
           >
             <Save className="w-4 h-4" />
-            <span>{saving ? "Saving Invoice..." : "Generate Invoice PDF"}</span>
+            <span>
+              {saving
+                ? "Saving Invoice..."
+                : isEdit
+                ? "Save Changes"
+                : "Generate Invoice PDF"}
+            </span>
           </button>
         </div>
       </div>
@@ -530,7 +676,7 @@ function NewInvoicePageInner() {
                           <option value="">-- Load from Product Catalog --</option>
                           {products.map((p) => (
                             <option key={p.id} value={p.id}>
-                              {p.name} ({formatCurrency(p.rate)})
+                              {p.name} ({formatCurrency(p.rate, currency)})
                             </option>
                           ))}
                         </select>
@@ -594,7 +740,7 @@ function NewInvoicePageInner() {
                         Amount (PKR)
                       </label>
                       <div className="w-full p-2 bg-neutral-100 border border-neutral-300 rounded-xl text-neutral-900 font-bold text-right tabular-nums">
-                        {formatCurrency(item.amount)}
+                        {formatCurrency(item.amount, currency)}
                       </div>
                     </div>
                   </div>
@@ -638,7 +784,7 @@ function NewInvoicePageInner() {
               <div className="flex justify-between items-center text-neutral-600 font-medium">
                 <span>Subtotal:</span>
                 <span className="font-bold text-neutral-900 text-sm tabular-nums">
-                  {formatCurrency(subtotal)}
+                  {formatCurrency(subtotal, currency)}
                 </span>
               </div>
 
@@ -686,7 +832,7 @@ function NewInvoicePageInner() {
                   Grand Total:
                 </span>
                 <span className="text-base font-black tabular-nums">
-                  {formatCurrency(total)}
+                  {formatCurrency(total, currency)}
                 </span>
               </div>
 
@@ -700,8 +846,14 @@ function NewInvoicePageInner() {
                   max={total}
                   value={advance}
                   onChange={(e) => setAdvance(Number(e.target.value))}
-                  className="w-full p-2 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 font-bold"
+                  disabled={isEdit}
+                  className="w-full p-2 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 font-bold disabled:opacity-60 disabled:cursor-not-allowed"
                 />
+                {isEdit && (
+                  <p className="mt-1 text-[10px] text-neutral-500">
+                    Locked in edit mode — record payments from the invoice page.
+                  </p>
+                )}
               </div>
 
               <div className="p-3 bg-neutral-100 border border-neutral-300 rounded-xl flex justify-between items-center">
@@ -709,7 +861,7 @@ function NewInvoicePageInner() {
                   Remaining Balance:
                 </span>
                 <span className="text-base font-black text-rose-600 tabular-nums">
-                  {formatCurrency(balance)}
+                  {formatCurrency(balance, currency)}
                 </span>
               </div>
             </div>
@@ -721,7 +873,13 @@ function NewInvoicePageInner() {
               className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm shadow-indigo-600/30 transition-all active:translate-y-px flex items-center justify-center gap-2 mt-4 disabled:opacity-60"
             >
               <Save className="w-4 h-4" />
-              <span>{saving ? "Generating..." : "Save &amp; Generate Invoice PDF"}</span>
+              <span>
+                {saving
+                  ? "Generating..."
+                  : isEdit
+                  ? "Save Changes"
+                  : "Save & Generate Invoice PDF"}
+              </span>
             </button>
           </div>
         </div>
@@ -733,7 +891,7 @@ function NewInvoicePageInner() {
           <div className="zoom-[0.44] sm:zoom-[0.7] md:zoom-[0.85] xl:zoom-100">
           <InvoicePDFTemplate
             invoice={{
-              invoiceNumber: "INV-PREVIEW",
+              invoiceNumber: editing?.invoiceNumber || "INV-PREVIEW",
               invoiceDate: new Date(invoiceDate),
               dueDate: dueDate ? new Date(dueDate) : null,
               quotationNumber: quotationNumber || "0000200",
@@ -763,7 +921,7 @@ function NewInvoicePageInner() {
                 phone: "0300 0000000",
               },
             }}
-            settings={settings}
+            settings={settings || undefined}
           />
           </div>
         </div>

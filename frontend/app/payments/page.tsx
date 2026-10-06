@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { CreditCard, ArrowUpRight } from "lucide-react";
+import { PaymentRowActions } from "@/components/payment/PaymentRowActions";
+import { CreditCard } from "lucide-react";
 
 export const revalidate = 0;
 
@@ -16,6 +17,9 @@ export default async function PaymentsPage() {
   });
 
   const totalCollected = payments.reduce((sum, p) => sum + p.amount, 0);
+
+  const settings = await prisma.businessSettings.findFirst();
+  const currency = settings?.currency || "PKR";
 
   return (
     <div className="space-y-6">
@@ -34,7 +38,7 @@ export default async function PaymentsPage() {
             Total Revenue Collected
           </span>
           <span className="text-lg font-black text-emerald-700 tabular-nums">
-            {formatCurrency(totalCollected)}
+            {formatCurrency(totalCollected, currency)}
           </span>
         </div>
       </div>
@@ -52,12 +56,13 @@ export default async function PaymentsPage() {
                 <th className="py-3 px-4 font-bold">Payment Method</th>
                 <th className="py-3 px-4 font-bold">Reference / Notes</th>
                 <th className="py-3 px-4 font-bold text-right">Amount Received</th>
+                <th className="py-3 px-4 font-bold text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {payments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center">
+                  <td colSpan={8} className="py-12 text-center">
                     <div className="inline-flex flex-col items-center gap-2 text-neutral-400">
                       <CreditCard className="w-7 h-7" />
                       <p className="text-xs">No payment transactions recorded yet.</p>
@@ -100,7 +105,13 @@ export default async function PaymentsPage() {
                       {p.notes && <p className="text-[11px] text-neutral-400">{p.notes}</p>}
                     </td>
                     <td className="py-3 px-4 text-right font-black text-emerald-600 text-sm tabular-nums">
-                      +{formatCurrency(p.amount)}
+                      +{formatCurrency(p.amount, currency)}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <PaymentRowActions
+                        paymentId={p.id}
+                        paymentNumber={p.paymentNumber}
+                      />
                     </td>
                   </tr>
                 ))

@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { errMsg } from "@/lib/utils";
 import { SettingsSchema } from "@/lib/validations";
+import { requireApiSession } from "@/lib/dal";
 
 export async function GET() {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     let settings = await prisma.businessSettings.findFirst();
     if (!settings) {
@@ -19,12 +23,14 @@ export async function GET() {
       });
     }
     return NextResponse.json({ success: true, settings });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 500 });
   }
 }
 
 export async function PUT(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();
     const validated = SettingsSchema.parse(body);
@@ -43,6 +49,8 @@ export async function PUT(request: Request) {
         startingInvoiceNumber: validated.startingInvoiceNumber,
         quotationPrefix: validated.quotationPrefix,
         startingQuotationNum: validated.startingQuotationNum,
+        customerPrefix: validated.customerPrefix,
+        startingCustomerNum: validated.startingCustomerNum,
         currency: validated.currency,
         defaultPaymentTerms: validated.defaultPaymentTerms || null,
         defaultNotes: validated.defaultNotes || null,
@@ -61,6 +69,8 @@ export async function PUT(request: Request) {
         startingInvoiceNumber: validated.startingInvoiceNumber,
         quotationPrefix: validated.quotationPrefix,
         startingQuotationNum: validated.startingQuotationNum,
+        customerPrefix: validated.customerPrefix,
+        startingCustomerNum: validated.startingCustomerNum,
         currency: validated.currency,
         defaultPaymentTerms: validated.defaultPaymentTerms || null,
         defaultNotes: validated.defaultNotes || null,
@@ -69,7 +79,7 @@ export async function PUT(request: Request) {
     });
 
     return NextResponse.json({ success: true, settings });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 400 });
   }
 }

@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -20,9 +21,9 @@ async function main() {
       invoicePrefix: "INV-",
       startingInvoiceNumber: 1,
       quotationPrefix: "QT-",
-      startingQuotationNum: 200,
+      startingQuotationNum: 1,
       customerPrefix: "CUST-",
-      startingCustomerNum: 80,
+      startingCustomerNum: 1,
       currency: "PKR",
       defaultPaymentTerms: "50% advance with order, balance upon completion of installation & commissioning.",
       defaultNotes: "Thank you for choosing Dani Brothers. All equipment carries 1 Year standard manufacturer warranty. Physical damages/burns not covered.",
@@ -38,17 +39,17 @@ async function main() {
     create: {
       name: "Dani Brothers Admin",
       email: "admin@danibrothers.com",
-      password: "admin", // Simple dev auth
+      password: bcrypt.hashSync("admin", 10),
       role: "ADMIN",
     },
   });
 
   // 3. Customers
   const customerKhalid = await prisma.customer.upsert({
-    where: { customerCode: "000080" },
+    where: { customerCode: "CUST-000001" },
     update: {},
     create: {
-      customerCode: "000080",
+      customerCode: "CUST-000001",
       name: "KHALID BHAI",
       companyName: "Al-Khalid Traders",
       address: "Sector 5-E, North Karachi",
@@ -60,10 +61,10 @@ async function main() {
   });
 
   const customerTariq = await prisma.customer.upsert({
-    where: { customerCode: "000081" },
+    where: { customerCode: "CUST-000002" },
     update: {},
     create: {
-      customerCode: "000081",
+      customerCode: "CUST-000002",
       name: "TARIQ MEHMOOD",
       companyName: "Mehmood & Sons Logistics",
       address: "Plot 42, Korangi Industrial Area",
@@ -151,21 +152,30 @@ async function main() {
   ];
 
   for (const prod of productsData) {
-    await prisma.product.create({
-      data: prod,
+    const existing = await prisma.product.findFirst({
+      where: { name: prod.name },
+      select: { id: true },
     });
+    if (existing) {
+      await prisma.product.update({ where: { id: existing.id }, data: prod });
+    } else {
+      await prisma.product.create({ data: prod });
+    }
   }
 
-  // 5. Sample Quotation (0000200) for Khalid Bhai
-  const quotation = await prisma.quotation.create({
-    data: {
-      quotationNumber: "0000200",
+  // 5. Sample Quotation (QT-0000001) for Khalid Bhai
+  const quotation = await prisma.quotation.upsert({
+    where: { quotationNumber: "QT-0000001" },
+    // Sample quotation is linked to INV-000001 — keep it marked Converted.
+    update: { status: "Converted" },
+    create: {
+      quotationNumber: "QT-0000001",
       customerId: customerKhalid.id,
       date: new Date("2026-09-28"),
       subtotal: 175200,
       discount: 12200,
       total: 163000,
-      status: "Accepted",
+      status: "Converted",
       notes: "Proposal for comprehensive CCTV setup at client residence / commercial facility.",
       items: {
         create: [
@@ -228,8 +238,10 @@ async function main() {
   // Grand Total: PKR 163,000
   // Advance: PKR 80,000
   // Remaining Balance: PKR 83,000
-  const invoice1 = await prisma.invoice.create({
-    data: {
+  const invoice1 = await prisma.invoice.upsert({
+    where: { invoiceNumber: "INV-000001" },
+    update: {},
+    create: {
       invoiceNumber: "INV-000001",
       quotationId: quotation.id,
       customerId: customerKhalid.id,
@@ -314,8 +326,10 @@ async function main() {
   });
 
   // 7. Second Invoice (INV-000002) for Tariq Mehmood (Paid in full)
-  await prisma.invoice.create({
-    data: {
+  await prisma.invoice.upsert({
+    where: { invoiceNumber: "INV-000002" },
+    update: {},
+    create: {
       invoiceNumber: "INV-000002",
       customerId: customerTariq.id,
       invoiceDate: new Date("2026-10-03"),

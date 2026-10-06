@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# dev server redirect log
+devlog.txt
+
+# generated e2e asset
+e2e/test-logo.png

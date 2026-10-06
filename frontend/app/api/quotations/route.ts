@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { QuotationSchema } from "@/lib/validations";
-import { toDecimalSafe } from "@/lib/utils";
+import { toDecimalSafe, errMsg } from "@/lib/utils";
+import { requireApiSession } from "@/lib/dal";
+import { nextQuotationNumber } from "@/lib/numbering";
 
 export async function GET(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
@@ -27,23 +31,21 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({ success: true, quotations });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();
     const validated = QuotationSchema.parse(body);
 
     let quotationNumber = validated.quotationNumber;
     if (!quotationNumber) {
-      const settings = await prisma.businessSettings.findFirst();
-      const count = await prisma.quotation.count();
-      const prefix = settings?.quotationPrefix || "QT-";
-      const startNum = settings?.startingQuotationNum || 200;
-      quotationNumber = `${String(startNum + count).padStart(7, "0")}`;
+      quotationNumber = await nextQuotationNumber();
     }
 
     let calculatedSubtotal = 0;
@@ -87,7 +89,7 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ success: true, quotation }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to create quotation" }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error, "Failed to create quotation") }, { status: 400 });
   }
 }

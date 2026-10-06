@@ -3,28 +3,44 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { FileText, Plus, Eye, ArrowRight } from "lucide-react";
+import { useCurrency } from "@/lib/currency";
+import { QuotationRowActions } from "@/components/quotation/QuotationRowActions";
+import { FileText, Plus } from "lucide-react";
+
+type QuotationListItem = {
+  id: string;
+  quotationNumber: string;
+  date: string;
+  subtotal: number;
+  discount: number;
+  total: number;
+  status: string;
+  customer?: { name: string; customerCode: string } | null;
+};
 
 export default function QuotationsPage() {
-  const [quotations, setQuotations] = useState<any[]>([]);
+  const [quotations, setQuotations] = useState<QuotationListItem[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const fetchQuotations = async () => {
-    try {
-      const res = await fetch("/api/quotations");
-      const data = await res.json();
-      if (data.success) {
-        setQuotations(data.quotations);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const currency = useCurrency();
 
   useEffect(() => {
-    fetchQuotations();
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/quotations");
+        const data = await res.json();
+        if (!cancelled && data.success) {
+          setQuotations(data.quotations);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -41,11 +57,11 @@ export default function QuotationsPage() {
         </div>
         <div>
           <Link
-            href="/invoices/new"
+            href="/quotations/new"
             className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-sm shadow-indigo-600/30 transition-all active:translate-y-px"
           >
             <Plus className="w-4 h-4" />
-            <span>Create Invoice / Quote</span>
+            <span>New Quotation</span>
           </Link>
         </div>
       </div>
@@ -89,7 +105,12 @@ export default function QuotationsPage() {
                 quotations.map((q) => (
                   <tr key={q.id} className="hover:bg-neutral-50/80 transition-colors">
                     <td className="py-3 px-4 font-bold text-neutral-900 font-mono">
-                      {q.quotationNumber}
+                      <Link
+                        href={`/quotations/${q.id}`}
+                        className="hover:underline text-indigo-600"
+                      >
+                        {q.quotationNumber}
+                      </Link>
                     </td>
                     <td className="py-3 px-4">
                       <p className="font-semibold text-neutral-900">{q.customer?.name}</p>
@@ -101,13 +122,13 @@ export default function QuotationsPage() {
                       {formatDate(q.date)}
                     </td>
                     <td className="py-3 px-4 text-right text-neutral-600">
-                      {formatCurrency(q.subtotal)}
+                      {formatCurrency(q.subtotal, currency)}
                     </td>
                     <td className="py-3 px-4 text-right text-rose-600">
-                      {q.discount > 0 ? formatCurrency(q.discount) : "-"}
+                      {q.discount > 0 ? formatCurrency(q.discount, currency) : "-"}
                     </td>
                     <td className="py-3 px-4 text-right font-bold text-neutral-900 tabular-nums">
-                      {formatCurrency(q.total)}
+                      {formatCurrency(q.total, currency)}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span
@@ -124,13 +145,10 @@ export default function QuotationsPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <Link
-                        href={`/invoices/new?quotationId=${q.id}`}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 ring-1 ring-inset ring-indigo-600/20 font-semibold rounded-lg text-[11px] transition-colors"
-                      >
-                        <span>Convert to Invoice</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
+                      <QuotationRowActions
+                        quotationId={q.id}
+                        quotationNumber={q.quotationNumber}
+                      />
                     </td>
                   </tr>
                 ))

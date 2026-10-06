@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { errMsg } from "@/lib/utils";
+import { requireApiSession } from "@/lib/dal";
 
 export async function GET(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim() || "";
@@ -53,7 +57,7 @@ export async function GET(request: Request) {
         products,
       },
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 500 });
   }
 }

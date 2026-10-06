@@ -5,15 +5,33 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number, currency: string = "PKR"): string {
-  if (isNaN(amount) || amount === null || amount === undefined) {
+/**
+ * Normalize any money-ish value (Prisma Decimal, numeric string, number)
+ * to a plain JS number. Prisma Decimal is safe to pass here — it stringifies
+ * to a numeric representation.
+ */
+export function toNum(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (value === null || value === undefined || value === "") return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Safe error message extraction for catch blocks (no `any`). */
+export function errMsg(error: unknown, fallback = "Request failed"): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+export function formatCurrency(amount: unknown, currency: string = "PKR"): string {
+  const value = toNum(amount);
+  if (!Number.isFinite(value)) {
     return `${currency} 0`;
   }
   // Decimal-safe rounded to integer or 2 decimal places if needed
   const formatted = new Intl.NumberFormat("en-PK", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(amount);
+  }).format(value);
   return `${currency} ${formatted}`;
 }
 

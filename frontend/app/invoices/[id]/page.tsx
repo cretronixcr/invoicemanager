@@ -15,7 +15,26 @@ import {
   Copy,
   Trash2,
   CheckCircle,
+  MessageCircle,
+  Mail,
+  Link2,
 } from "lucide-react";
+
+type InvoiceDetail =
+  React.ComponentProps<typeof InvoicePDFTemplate>["invoice"] & {
+    id: string;
+    customerId: string;
+    payments?: {
+      id: string;
+      paymentNumber: string;
+      paymentDate: string;
+      paymentMethod: string;
+      reference?: string | null;
+      amount: number;
+    }[];
+  };
+
+type SettingsInfo = React.ComponentProps<typeof InvoicePDFTemplate>["settings"];
 
 export default function InvoiceDetailPage({
   params,
@@ -25,14 +44,70 @@ export default function InvoiceDetailPage({
   const { id } = use(params);
   const router = useRouter();
 
-  const [invoice, setInvoice] = useState<any>(null);
-  const [settings, setSettings] = useState<any>(null);
+  const [invoice, setInvoice] = useState<InvoiceDetail | null>(null);
+  const [settings, setSettings] = useState<SettingsInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [paymentReference, setPaymentReference] = useState("");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const buildShare = () => {
+    if (!invoice?.customer) return null;
+    const url = `${window.location.origin}/invoices/${invoice.id}`;
+    const text = [
+      `Invoice ${invoice.invoiceNumber} — ${settings?.businessName || "DANI BROTHERS"}`,
+      `Customer: ${invoice.customer.name}`,
+      `Total: ${formatCurrency(invoice.total, settings?.currency)}`,
+      `Paid: ${formatCurrency(invoice.paidAmount, settings?.currency)}`,
+      `Balance: ${formatCurrency(invoice.balance, settings?.currency)}`,
+      "",
+      url,
+    ].join("\n");
+    return { url, text };
+  };
+
+  const handleWhatsApp = () => {
+    const share = buildShare();
+    const phone = invoice?.customer?.phone;
+    if (!share || !phone) return;
+    const digits = phone.replace(/\D/g, "");
+    let intl = digits;
+    if (intl.startsWith("0")) intl = `92${intl.slice(1)}`;
+    else if (!intl.startsWith("92")) intl = `92${intl}`;
+    window.open(
+      `https://wa.me/${intl}?text=${encodeURIComponent(share.text)}`,
+      "_blank",
+      "noopener"
+    );
+  };
+
+  const handleEmail = () => {
+    const share = buildShare();
+    if (!share) return;
+    const subject = `Invoice ${invoice?.invoiceNumber} — ${
+      settings?.businessName || "DANI BROTHERS"
+    }`;
+    const to = invoice?.customer?.email || "";
+    window.location.href = `mailto:${to}?subject=${encodeURIComponent(
+      subject
+    )}&body=${encodeURIComponent(share.text)}`;
+  };
+
+  const handleCopyLink = async () => {
+    const share = buildShare();
+    if (!share) return;
+    try {
+      await navigator.clipboard.writeText(share.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copy invoice link:", share.url);
+    }
+  };
 
   const fetchInvoice = async () => {
     try {
@@ -51,7 +126,25 @@ export default function InvoiceDetailPage({
   };
 
   useEffect(() => {
-    fetchInvoice();
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/invoices/${id}`);
+        const data = await res.json();
+        if (!cancelled && data.success) {
+          setInvoice(data.invoice);
+          setSettings(data.settings);
+          setPaymentAmount(data.invoice.balance > 0 ? data.invoice.balance : 0);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   const handleDownloadPDF = async () => {
@@ -61,13 +154,57 @@ export default function InvoiceDetailPage({
         "invoice-pdf-template",
         `Invoice_${invoice.invoiceNumber || "INV"}.pdf`
       );
-    } catch (e) {
+    } catch {
       alert("Failed to generate PDF. You can also use the Print button to save as PDF.");
     }
   };
 
   const handlePrint = () => {
     printInvoiceElement("invoice-pdf-template");
+  };
+
+  const handleDelete = async () => {
+    if (!invoice) return;
+    const ok = window.confirm(
+      `Delete invoice ${invoice.invoiceNumber} permanently? This cannot be undone.`
+    );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        router.push("/invoices");
+      } else {
+        alert(data.error || "Failed to delete invoice");
+        setDeleting(false);
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to delete invoice");
+      setDeleting(false);
+    }
+  };
+
+  const handleDeletePayment = async (paymentId: string, paymentNumber: string) => {
+    const ok = window.confirm(
+      `Delete payment ${paymentNumber}? The invoice balance and status will be recalculated.`
+    );
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/payments/${paymentId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchInvoice();
+      } else {
+        alert(data.error || "Failed to delete payment");
+      }
+    } catch (err) {
+      alert(
+        err instanceof Error ? err.message : "Failed to delete payment"
+      );
+    }
   };
 
   const handleRecordPayment = async (e: React.FormEvent) => {
@@ -96,8 +233,10 @@ export default function InvoiceDetailPage({
       } else {
         alert(data.error || "Failed to record payment");
       }
-    } catch (e: any) {
-      alert(e.message || "Error recording payment");
+    } catch (e) {
+      alert(
+        e instanceof Error ? e.message : "Error recording payment"
+      );
     } finally {
       setSubmittingPayment(false);
     }
@@ -177,7 +316,7 @@ export default function InvoiceDetailPage({
               {invoice.invoiceNumber}
             </h1>
             <p className="text-xs text-neutral-500">
-              Customer: {invoice.customer.name} ({invoice.customer.customerCode})
+              Customer: {invoice.customer?.name} ({invoice.customer?.customerCode})
             </p>
           </div>
         </div>
@@ -209,6 +348,47 @@ export default function InvoiceDetailPage({
             <span>Print Invoice</span>
           </button>
 
+          {invoice.customer?.phone && (
+            <button
+              onClick={handleWhatsApp}
+              title="Share on WhatsApp"
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 ring-1 ring-inset ring-emerald-600/20 font-semibold rounded-xl transition-colors"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>WhatsApp</span>
+            </button>
+          )}
+
+          <button
+            onClick={handleEmail}
+            title={
+              invoice.customer?.email
+                ? "Email invoice summary"
+                : "No email on file — opens blank mail app"
+            }
+            className="flex items-center gap-1.5 px-3 py-2 bg-sky-50 hover:bg-sky-600 hover:text-white text-sky-700 ring-1 ring-inset ring-sky-600/20 font-semibold rounded-xl transition-colors"
+          >
+            <Mail className="w-3.5 h-3.5" />
+            <span>Email</span>
+          </button>
+
+          <button
+            onClick={handleCopyLink}
+            title="Copy shareable invoice link"
+            className="flex items-center gap-1.5 px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold rounded-xl transition-colors"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            <span>{copied ? "Copied!" : "Copy Link"}</span>
+          </button>
+
+          <Link
+            href={`/invoices/new?editId=${invoice.id}`}
+            className="flex items-center gap-1 px-3 py-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 font-medium rounded-xl transition-colors"
+          >
+            <Edit className="w-3.5 h-3.5" />
+            <span>Edit</span>
+          </Link>
+
           <Link
             href={`/invoices/new?duplicateId=${invoice.id}`}
             className="flex items-center gap-1 px-3 py-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 font-medium rounded-xl transition-colors"
@@ -216,6 +396,15 @@ export default function InvoiceDetailPage({
             <Copy className="w-3.5 h-3.5" />
             <span>Duplicate</span>
           </Link>
+
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="flex items-center gap-1 px-3 py-2 text-neutral-500 hover:text-rose-600 hover:bg-rose-50 font-medium rounded-xl transition-colors disabled:opacity-60"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>{deleting ? "Deleting..." : "Delete"}</span>
+          </button>
         </div>
       </div>
 
@@ -235,10 +424,11 @@ export default function InvoiceDetailPage({
                   <th className="py-1 px-2 font-medium">Method</th>
                   <th className="py-1 px-2 font-medium">Reference</th>
                   <th className="py-1 px-2 font-medium text-right">Amount</th>
+                  <th className="py-1 px-2 font-medium text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {invoice.payments.map((p: any) => (
+                {invoice.payments.map((p) => (
                   <tr key={p.id}>
                     <td className="py-2 px-2 font-mono font-semibold">{p.paymentNumber}</td>
                     <td className="py-2 px-2">{formatDate(p.paymentDate)}</td>
@@ -246,6 +436,16 @@ export default function InvoiceDetailPage({
                     <td className="py-2 px-2 text-neutral-500">{p.reference || "N/A"}</td>
                     <td className="py-2 px-2 text-right font-bold text-emerald-600">
                       {formatCurrency(p.amount, settings?.currency)}
+                    </td>
+                    <td className="py-2 px-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePayment(p.id, p.paymentNumber)}
+                        title="Delete this payment (void)"
+                        className="p-1.5 rounded-lg text-neutral-400 bg-neutral-100 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -264,7 +464,7 @@ export default function InvoiceDetailPage({
         <div className="zoom-[0.44] sm:zoom-[0.7] md:zoom-[0.85] xl:zoom-100">
           <InvoicePDFTemplate
             invoice={invoice}
-            settings={settings}
+            settings={settings || undefined}
             id="invoice-pdf-template"
           />
         </div>

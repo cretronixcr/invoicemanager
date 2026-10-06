@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { errMsg } from "@/lib/utils";
 import { CustomerSchema } from "@/lib/validations";
+import { requireApiSession } from "@/lib/dal";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const { id } = await params;
     const customer = await prisma.customer.findUnique({
@@ -26,8 +30,8 @@ export async function GET(
     }
 
     return NextResponse.json({ success: true, customer });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 500 });
   }
 }
 
@@ -35,6 +39,8 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const { id } = await params;
     const body = await request.json();
@@ -54,8 +60,8 @@ export async function PUT(
     });
 
     return NextResponse.json({ success: true, customer });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 400 });
   }
 }
 
@@ -63,11 +69,13 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const { id } = await params;
     await prisma.customer.delete({ where: { id } });
     return NextResponse.json({ success: true, message: "Customer deleted successfully" });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 500 });
   }
 }

@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { errMsg } from "@/lib/utils";
 import { ProductSchema } from "@/lib/validations";
+import { requireApiSession } from "@/lib/dal";
 
 export async function GET(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
@@ -27,12 +31,14 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({ success: true, products });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();
     const validated = ProductSchema.parse(body);
@@ -51,7 +57,7 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ success: true, product }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to create product" }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error, "Failed to create product") }, { status: 400 });
   }
 }

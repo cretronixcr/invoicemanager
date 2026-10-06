@@ -40,7 +40,7 @@ model Product {
   description    String?
   category       String          @default("General") // e.g. Cameras, NVR, Cables, Installation
   unit           String          @default("Pcs") // Pcs, Mtr, Box, Job
-  rate           Float           @default(0)
+  rate           Decimal           @default(0)
   warranty       String?
   notes          String?
   quotationItems QuotationItem[]
@@ -55,10 +55,10 @@ model Quotation {
   customerId      String
   customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   date            DateTime        @default(now())
-  subtotal        Float           @default(0)
-  discount        Float           @default(0)
-  tax             Float           @default(0)
-  total           Float           @default(0)
+  subtotal        Decimal           @default(0)
+  discount        Decimal           @default(0)
+  tax             Decimal           @default(0)
+  total           Decimal           @default(0)
   status          String          @default("Pending") // Draft, Sent, Accepted, Converted, Rejected
   notes           String?
   items           QuotationItem[]
@@ -77,8 +77,8 @@ model QuotationItem {
   serialNumber Int       @default(1)
   description  String
   quantity     Float     @default(1)
-  rate         Float     @default(0)
-  amount       Float     @default(0)
+  rate         Decimal     @default(0)
+  amount       Decimal     @default(0)
 }
 
 model Invoice {
@@ -91,14 +91,14 @@ model Invoice {
   invoiceDate       DateTime      @default(now())
   dueDate           DateTime?
   referenceNumber   String?
-  subtotal          Float         @default(0)
-  discount          Float         @default(0)
-  additionalCharges Float         @default(0)
-  tax               Float         @default(0)
-  total             Float         @default(0)
-  advance           Float         @default(0)
-  paidAmount        Float         @default(0)
-  balance           Float         @default(0)
+  subtotal          Decimal         @default(0)
+  discount          Decimal         @default(0)
+  additionalCharges Decimal         @default(0)
+  tax               Decimal         @default(0)
+  total             Decimal         @default(0)
+  advance           Decimal         @default(0)
+  paidAmount        Decimal         @default(0)
+  balance           Decimal         @default(0)
   status            String        @default("Issued") // Draft, Issued, Partially Paid, Paid, Overdue, Cancelled
   notes             String?
   items             InvoiceItem[]
@@ -117,8 +117,8 @@ model InvoiceItem {
   serialNumber Int      @default(1)
   description  String
   quantity     Float    @default(1)
-  rate         Float    @default(0)
-  amount       Float    @default(0)
+  rate         Decimal    @default(0)
+  amount       Decimal    @default(0)
 }
 
 model Payment {
@@ -126,7 +126,7 @@ model Payment {
   paymentNumber String   @unique // e.g. PAY-000001
   invoiceId     String
   invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  amount        Float
+  amount        Decimal
   paymentDate   DateTime @default(now())
   paymentMethod String   @default("Cash") // Cash, Bank Transfer, Cheque, Other
   reference     String?
@@ -146,9 +146,9 @@ model BusinessSettings {
   invoicePrefix         String   @default("INV-")
   startingInvoiceNumber Int      @default(1)
   quotationPrefix       String   @default("QT-")
-  startingQuotationNum  Int      @default(200)
+  startingQuotationNum  Int      @default(1)
   customerPrefix        String   @default("CUST-")
-  startingCustomerNum   Int      @default(80)
+  startingCustomerNum   Int      @default(1)
   currency              String   @default("PKR")
   defaultPaymentTerms   String?  @default("Payment due upon completion / invoice issue.")
   defaultNotes          String?  @default("Thank you for your business. All equipment carries manufacturer warranty.")

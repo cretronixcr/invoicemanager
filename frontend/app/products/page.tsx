@@ -1,16 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { formatCurrency } from "@/lib/utils";
-import { Package, Plus, Search, Edit, Trash2, Tag, ShieldCheck } from "lucide-react";
+import { useCurrency } from "@/lib/currency";
+import { Package, Plus, Search, Edit, Trash2, ShieldCheck, Download } from "lucide-react";
 
-export default function ProductsPage() {
-  const [products, setProducts] = useState<any[]>([]);
+type Product = {
+  id: string;
+  productCode?: string | null;
+  name: string;
+  description?: string | null;
+  category: string;
+  unit: string;
+  rate: number;
+  warranty?: string | null;
+  notes?: string | null;
+};
+
+function ProductsPageInner() {
+  const searchParams = useSearchParams();
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
+  const currency = useCurrency();
+  const [search, setSearch] = useState(searchParams.get("search") || "");
   const [showModal, setShowModal] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   // Form states
   const [name, setName] = useState("");
@@ -23,9 +38,7 @@ export default function ProductsPage() {
 
   const fetchProducts = async () => {
     try {
-      const url = `/api/products?search=${encodeURIComponent(search)}${
-        categoryFilter ? `&category=${encodeURIComponent(categoryFilter)}` : ""
-      }`;
+      const url = `/api/products?search=${encodeURIComponent(search)}`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
@@ -39,8 +52,25 @@ export default function ProductsPage() {
   };
 
   useEffect(() => {
-    fetchProducts();
-  }, [search, categoryFilter]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = `/api/products?search=${encodeURIComponent(search)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!cancelled && data.success) {
+          setProducts(data.products);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [search]);
 
   const handleOpenAdd = () => {
     setEditingProduct(null);
@@ -54,7 +84,7 @@ export default function ProductsPage() {
     setShowModal(true);
   };
 
-  const handleOpenEdit = (p: any) => {
+  const handleOpenEdit = (p: Product) => {
     setEditingProduct(p);
     setName(p.name);
     setProductCode(p.productCode || "");
@@ -95,8 +125,8 @@ export default function ProductsPage() {
       } else {
         alert(data.error || "Failed to save product");
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to save product");
     }
   };
 
@@ -127,7 +157,14 @@ export default function ProductsPage() {
             Maintain reusable hardware (Cameras, NVRs, cabling) and installation service rates.
           </p>
         </div>
-        <div>
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/reports/export?type=products"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white ring-1 ring-neutral-300 hover:bg-neutral-50 text-neutral-700 font-semibold text-xs rounded-xl transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export CSV</span>
+          </a>
           <button
             onClick={handleOpenAdd}
             className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-sm shadow-indigo-600/30 transition-all active:translate-y-px"
@@ -212,7 +249,7 @@ export default function ProductsPage() {
                     </td>
                     <td className="py-3 px-4 text-neutral-600">{p.unit}</td>
                     <td className="py-3 px-4 text-right font-bold text-neutral-900 tabular-nums">
-                      {formatCurrency(p.rate)}
+                      {formatCurrency(p.rate, currency)}
                     </td>
                     <td className="py-3 px-4 text-neutral-600">
                       {p.warranty ? (
@@ -379,5 +416,20 @@ export default function ProductsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center gap-2 min-h-screen text-neutral-400 text-xs">
+          <span className="h-4 w-4 rounded-full border-2 border-neutral-300 border-t-indigo-600 animate-spin inline-block" />{" "}
+          Loading products...
+        </div>
+      }
+    >
+      <ProductsPageInner />
+    </Suspense>
   );
 }

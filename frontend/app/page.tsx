@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { effectiveStatus, syncInvoiceStatuses } from "@/lib/invoice-status";
 import {
-  Receipt,
   Users,
   CreditCard,
   Clock,
@@ -16,15 +16,26 @@ import {
 export const revalidate = 0;
 
 export default async function DashboardPage() {
+  // Repair overdue flags before reading so KPIs and badges are honest.
+  await syncInvoiceStatuses();
+
   const [
     invoicesCount,
     customersCount,
-    allInvoices,
+    totals,
+    recentInvoices,
     recentPayments,
+    settings,
   ] = await Promise.all([
     prisma.invoice.count(),
     prisma.customer.count(),
+    // Aggregate instead of loading every invoice into memory.
+    prisma.invoice.aggregate({
+      where: { status: { not: "Cancelled" } },
+      _sum: { total: true, paidAmount: true, balance: true },
+    }),
     prisma.invoice.findMany({
+      take: 6,
       include: { customer: true },
       orderBy: { invoiceDate: "desc" },
     }),
@@ -37,21 +48,18 @@ export default async function DashboardPage() {
         },
       },
     }),
+    prisma.businessSettings.findFirst(),
   ]);
 
-  let totalSales = 0;
-  let totalPaid = 0;
-  let totalPending = 0;
+  const currency = settings?.currency || "PKR";
+  const totalSales = totals._sum.total || 0;
+  const totalPaid = totals._sum.paidAmount || 0;
+  const totalPending = totals._sum.balance || 0;
 
-  for (const inv of allInvoices) {
-    if (inv.status !== "Cancelled") {
-      totalSales += inv.total;
-      totalPaid += inv.paidAmount;
-      totalPending += inv.balance;
-    }
-  }
-
-  const recentInvoices = allInvoices.slice(0, 6);
+  const shownInvoices = recentInvoices.map((inv) => ({
+    ...inv,
+    status: effectiveStatus(inv),
+  }));
 
   return (
     <div className="space-y-6">
@@ -96,7 +104,7 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div className="text-xl font-bold text-neutral-900 tabular-nums">
-            {formatCurrency(totalSales)}
+            {formatCurrency(totalSales, currency)}
           </div>
           <p className="text-[11px] text-neutral-500 mt-1">
             Across {invoicesCount} total invoices
@@ -114,7 +122,7 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div className="text-xl font-bold text-emerald-600 tabular-nums">
-            {formatCurrency(totalPaid)}
+            {formatCurrency(totalPaid, currency)}
           </div>
           <p className="text-[11px] text-neutral-500 mt-1">
             Collected revenues &amp; advances
@@ -132,7 +140,7 @@ export default async function DashboardPage() {
             </div>
           </div>
           <div className="text-xl font-bold text-rose-600 tabular-nums">
-            {formatCurrency(totalPending)}
+            {formatCurrency(totalPending, currency)}
           </div>
           <p className="text-[11px] text-neutral-500 mt-1">
             Unpaid / partial client balances
@@ -193,7 +201,7 @@ export default async function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {recentInvoices.map((inv) => (
+                {shownInvoices.map((inv) => (
                   <tr key={inv.id} className="hover:bg-neutral-50/70 transition-colors">
                     <td className="py-3 px-4 font-bold text-neutral-900">
                       <Link
@@ -215,20 +223,22 @@ export default async function DashboardPage() {
                       {formatDate(inv.invoiceDate)}
                     </td>
                     <td className="py-3 px-4 text-right font-semibold text-neutral-900">
-                      {formatCurrency(inv.total)}
+                      {formatCurrency(inv.total, currency)}
                     </td>
                     <td className="py-3 px-4 text-right font-medium text-rose-600">
-                      {formatCurrency(inv.balance)}
+                      {formatCurrency(inv.balance, currency)}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide rounded-full ring-1 ring-inset ${
-                          inv.status === "Paid"
-                            ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
-                            : inv.status === "Partially Paid"
-                            ? "bg-amber-50 text-amber-700 ring-amber-600/20"
-                            : "bg-neutral-100 text-neutral-600 ring-neutral-500/15"
-                        }`}
+                            inv.status === "Paid"
+                              ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
+                              : inv.status === "Partially Paid"
+                              ? "bg-amber-50 text-amber-700 ring-amber-600/20"
+                              : inv.status === "Overdue"
+                              ? "bg-rose-50 text-rose-700 ring-rose-600/20"
+                              : "bg-neutral-100 text-neutral-600 ring-neutral-500/15"
+                          }`}
                       >
                         <span className="h-1.5 w-1.5 rounded-full bg-current" />
                         {inv.status}
@@ -288,7 +298,7 @@ export default async function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <span className="font-bold text-emerald-600 text-sm block tabular-nums">
-                      +{formatCurrency(pay.amount)}
+                      +{formatCurrency(pay.amount, currency)}
                     </span>
                     <span className="text-[9px] bg-neutral-200 text-neutral-700 px-1.5 py-0.5 rounded font-mono">
                       {pay.paymentNumber}

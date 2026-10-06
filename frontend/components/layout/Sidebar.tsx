@@ -71,6 +71,7 @@ export function Sidebar({
       <div className="p-4 shrink-0">
         <Link
           href="/invoices/new"
+          onClick={onClose}
           className="flex items-center justify-center gap-2 w-full py-2.5 px-4 bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white text-xs font-semibold rounded-xl shadow-md shadow-indigo-950/40 transition-all active:translate-y-px"
         >
           <PlusCircle className="w-4 h-4" />
@@ -93,6 +94,7 @@ export function Sidebar({
             <Link
               key={item.name}
               href={item.href}
+              onClick={onClose}
               className={`group flex items-center justify-between py-2 pl-2.5 pr-3 text-xs rounded-lg border-l-2 transition-all ${
                 isActive
                   ? "bg-neutral-800 text-white font-semibold border-indigo-500 shadow-sm"

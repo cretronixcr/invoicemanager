@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { PaymentSchema } from "@/lib/validations";
-import { toDecimalSafe } from "@/lib/utils";
+import { toDecimalSafe, errMsg } from "@/lib/utils";
+import { requireApiSession } from "@/lib/dal";
+import { nextPaymentNumber } from "@/lib/numbering";
+import { resolveInvoiceStatus } from "@/lib/invoice-status";
 
 export async function GET(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const { searchParams } = new URL(request.url);
     const invoiceId = searchParams.get("invoiceId");
@@ -19,12 +24,14 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({ success: true, payments });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();
     const validated = PaymentSchema.parse(body);
@@ -47,7 +54,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const paymentNumber = `PAY-${Date.now().toString().slice(-6)}`;
+    // Sequential number — max(existing) + 1 (Date.now caused collisions).
+    const paymentNumber = await nextPaymentNumber();
 
     // Create payment in transaction
     const [payment, updatedInvoice] = await prisma.$transaction([
@@ -67,10 +75,13 @@ export async function POST(request: Request) {
         data: {
           paidAmount: toDecimalSafe(invoice.paidAmount + validated.amount),
           balance: toDecimalSafe(invoice.balance - validated.amount),
-          status:
-            toDecimalSafe(invoice.balance - validated.amount) <= 0
-              ? "Paid"
-              : "Partially Paid",
+          // A partial payment on a past-due invoice stays Overdue.
+          status: resolveInvoiceStatus({
+            status: "Issued",
+            dueDate: invoice.dueDate,
+            total: invoice.total,
+            paidAmount: toDecimalSafe(invoice.paidAmount + validated.amount),
+          }),
         },
         include: {
           customer: true,
@@ -80,7 +91,7 @@ export async function POST(request: Request) {
     ]);
 
     return NextResponse.json({ success: true, payment, invoice: updatedInvoice }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to record payment" }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error, "Failed to record payment") }, { status: 400 });
   }
 }

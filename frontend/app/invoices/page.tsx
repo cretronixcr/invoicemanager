@@ -1,40 +1,83 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { PlusCircle, Search, Filter, Eye, Printer, Download, Copy, Zap } from "lucide-react";
+import {
+  effectiveStatus,
+  overdueWhere,
+  syncInvoiceStatuses,
+} from "@/lib/invoice-status";
+import { InvoiceRowActions } from "@/components/invoice/InvoiceRowActions";
+import { PlusCircle, Search, Zap } from "lucide-react";
 
 export const revalidate = 0;
+
+const PAGE_SIZE = 20;
 
 export default async function InvoicesPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | undefined }>;
 }) {
-  const { search, status } = await searchParams;
+  const { search, status, page } = await searchParams;
+  const pageNum = Math.max(1, Number(page) || 1);
 
-  const invoices = await prisma.invoice.findMany({
-    where: {
-      AND: [
-        search
-          ? {
-              OR: [
-                { invoiceNumber: { contains: search } },
-                { referenceNumber: { contains: search } },
-                { customer: { name: { contains: search } } },
-                { customer: { companyName: { contains: search } } },
-                { customer: { customerCode: { contains: search } } },
-              ],
-            }
-          : {},
-        status ? { status } : {},
-      ],
-    },
-    include: {
-      customer: true,
-      payments: true,
-    },
-    orderBy: { invoiceDate: "desc" },
-  });
+  const settings = await prisma.businessSettings.findFirst();
+  const currency = settings?.currency || "PKR";
+
+  // Repair stored statuses (Issued/Partially → Overdue etc.) before reading.
+  await syncInvoiceStatuses();
+
+  const where = {
+    AND: [
+      search
+        ? {
+            OR: [
+              { invoiceNumber: { contains: search } },
+              { referenceNumber: { contains: search } },
+              { customer: { name: { contains: search } } },
+              { customer: { companyName: { contains: search } } },
+              { customer: { customerCode: { contains: search } } },
+            ],
+          }
+        : {},
+      status === "Overdue"
+        ? overdueWhere()
+        : status
+        ? { status }
+        : {},
+    ],
+  };
+
+  const [rows, total] = await Promise.all([
+    prisma.invoice.findMany({
+      where,
+      include: {
+        customer: true,
+        payments: true,
+      },
+      orderBy: { invoiceDate: "desc" },
+      skip: (pageNum - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
+    prisma.invoice.count({ where }),
+  ]);
+
+  // Fresh display status even between sync runs.
+  const invoices = rows.map((inv) => ({
+    ...inv,
+    status: effectiveStatus(inv),
+  }));
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const rangeStart = total === 0 ? 0 : (pageNum - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(pageNum * PAGE_SIZE, total);
+  const pageHref = (p: number) => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (status) params.set("status", status);
+    params.set("page", String(p));
+    return `/invoices?${params.toString()}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -94,6 +137,14 @@ export default async function InvoicesPage({
             Partially Paid
           </Link>
           <Link
+            href="/invoices?status=Overdue"
+            className={`px-3.5 py-1.5 rounded-full font-semibold transition-all ${
+              status === "Overdue" ? "bg-rose-600 text-white shadow-sm shadow-rose-600/30" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+            }`}
+          >
+            Overdue
+          </Link>
+          <Link
             href="/invoices?status=Paid"
             className={`px-3.5 py-1.5 rounded-full font-semibold transition-all ${
               status === "Paid" ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/30" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
@@ -104,7 +155,7 @@ export default async function InvoicesPage({
         </div>
 
         <span className="text-neutral-500 font-medium">
-          Showing {invoices.length} invoices
+          Showing {rangeStart}–{rangeEnd} of {total} invoices
         </span>
       </div>
 
@@ -163,19 +214,19 @@ export default async function InvoicesPage({
                       {formatDate(inv.invoiceDate)}
                     </td>
                     <td className="py-3 px-4 text-right text-neutral-600">
-                      {formatCurrency(inv.subtotal)}
+                      {formatCurrency(inv.subtotal, currency)}
                     </td>
                     <td className="py-3 px-4 text-right text-rose-600">
-                      {inv.discount > 0 ? formatCurrency(inv.discount) : "-"}
+                      {inv.discount > 0 ? formatCurrency(inv.discount, currency) : "-"}
                     </td>
                     <td className="py-3 px-4 text-right font-bold text-neutral-900">
-                      {formatCurrency(inv.total)}
+                      {formatCurrency(inv.total, currency)}
                     </td>
                     <td className="py-3 px-4 text-right font-medium text-emerald-600">
-                      {formatCurrency(inv.paidAmount)}
+                      {formatCurrency(inv.paidAmount, currency)}
                     </td>
                     <td className="py-3 px-4 text-right font-bold text-rose-600">
-                      {formatCurrency(inv.balance)}
+                      {formatCurrency(inv.balance, currency)}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span
@@ -184,6 +235,8 @@ export default async function InvoicesPage({
                             ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
                             : inv.status === "Partially Paid"
                             ? "bg-amber-50 text-amber-700 ring-amber-600/20"
+                            : inv.status === "Overdue"
+                            ? "bg-rose-50 text-rose-700 ring-rose-600/20"
                             : "bg-neutral-100 text-neutral-600 ring-neutral-500/15"
                         }`}
                       >
@@ -192,22 +245,10 @@ export default async function InvoicesPage({
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <Link
-                          href={`/invoices/${inv.id}`}
-                          title="View / Download PDF"
-                          className="p-1.5 rounded-lg text-neutral-500 bg-neutral-100 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </Link>
-                        <Link
-                          href={`/invoices/new?duplicateId=${inv.id}`}
-                          title="Duplicate Invoice"
-                          className="p-1.5 rounded-lg text-neutral-500 bg-neutral-100 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </Link>
-                      </div>
+                      <InvoiceRowActions
+                        invoiceId={inv.id}
+                        invoiceNumber={inv.invoiceNumber}
+                      />
                     </td>
                   </tr>
                 ))
@@ -216,6 +257,39 @@ export default async function InvoicesPage({
           </table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 text-xs">
+          {pageNum > 1 ? (
+            <Link
+              href={pageHref(pageNum - 1)}
+              className="px-4 py-2 bg-white ring-1 ring-neutral-300 hover:bg-neutral-50 text-neutral-700 font-semibold rounded-xl transition-colors"
+            >
+              ← Previous
+            </Link>
+          ) : (
+            <span className="px-4 py-2 text-neutral-300 font-semibold">
+              ← Previous
+            </span>
+          )}
+          <span className="text-neutral-500 font-medium">
+            Page {pageNum} of {totalPages}
+          </span>
+          {pageNum < totalPages ? (
+            <Link
+              href={pageHref(pageNum + 1)}
+              className="px-4 py-2 bg-white ring-1 ring-neutral-300 hover:bg-neutral-50 text-neutral-700 font-semibold rounded-xl transition-colors"
+            >
+              Next →
+            </Link>
+          ) : (
+            <span className="px-4 py-2 text-neutral-300 font-semibold">
+              Next →
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

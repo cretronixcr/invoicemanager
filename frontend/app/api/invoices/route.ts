@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { InvoiceSchema } from "@/lib/validations";
-import { toDecimalSafe } from "@/lib/utils";
+import { toDecimalSafe, errMsg } from "@/lib/utils";
+import { requireApiSession } from "@/lib/dal";
+import { nextInvoiceNumber, nextPaymentNumber } from "@/lib/numbering";
+import { resolveInvoiceStatus, effectiveStatus, syncInvoiceStatuses } from "@/lib/invoice-status";
 
 export async function GET(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
@@ -12,9 +17,12 @@ export async function GET(request: Request) {
     const fromDate = searchParams.get("fromDate");
     const toDate = searchParams.get("toDate");
 
-    const dateFilter: any = {};
+    const dateFilter: { gte?: Date; lte?: Date } = {};
     if (fromDate) dateFilter.gte = new Date(fromDate);
     if (toDate) dateFilter.lte = new Date(toDate);
+
+    // Recompute overdue flags before reading so filters/badges are honest.
+    await syncInvoiceStatuses();
 
     const invoices = await prisma.invoice.findMany({
       where: {
@@ -50,25 +58,29 @@ export async function GET(request: Request) {
       orderBy: { invoiceDate: "desc" },
     });
 
-    return NextResponse.json({ success: true, invoices });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    // Fresh display status even if the stored row hasn't been synced yet.
+    const payload = invoices.map((inv) => ({
+      ...inv,
+      status: effectiveStatus(inv),
+    }));
+
+    return NextResponse.json({ success: true, invoices: payload });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error) }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
+  const session = await requireApiSession();
+  if (session instanceof NextResponse) return session;
   try {
     const body = await request.json();
     const validated = InvoiceSchema.parse(body);
 
-    // Compute or verify invoice numbering
+    // Sequential number — max(existing) + 1, so deletions never cause reuse.
     let invoiceNumber = validated.invoiceNumber;
     if (!invoiceNumber) {
-      const settings = await prisma.businessSettings.findFirst();
-      const count = await prisma.invoice.count();
-      const prefix = settings?.invoicePrefix || "INV-";
-      const startNum = settings?.startingInvoiceNumber || 1;
-      invoiceNumber = `${prefix}${String(startNum + count).padStart(6, "0")}`;
+      invoiceNumber = await nextInvoiceNumber();
     }
 
     // Precise calculations
@@ -95,14 +107,30 @@ export async function POST(request: Request) {
     const paidAmount = advance;
     const balance = toDecimalSafe(total - paidAmount);
 
-    let status = validated.status;
-    if (balance <= 0 && total > 0) {
-      status = "Paid";
-    } else if (paidAmount > 0 && balance > 0) {
-      status = "Partially Paid";
-    } else if (paidAmount === 0 && status !== "Draft" && status !== "Cancelled") {
-      status = "Issued";
-    }
+    const status = resolveInvoiceStatus({
+      status: validated.status,
+      dueDate: validated.dueDate ? new Date(validated.dueDate) : null,
+      total,
+      paidAmount,
+    });
+
+    // Advance records create a payment row too — reserve its number first.
+    const advancePaymentNumber =
+      advance > 0 ? await nextPaymentNumber() : undefined;
+    const advancePayment = advancePaymentNumber
+      ? {
+          create: [
+            {
+              paymentNumber: advancePaymentNumber,
+              amount: advance,
+              paymentDate: new Date(validated.invoiceDate),
+              paymentMethod: "Cash",
+              reference: "Advance Payment",
+              notes: "Initial advance payment recorded at invoice creation.",
+            },
+          ],
+        }
+      : undefined;
 
     const invoice = await prisma.invoice.create({
       data: {
@@ -125,21 +153,7 @@ export async function POST(request: Request) {
         items: {
           create: itemsToCreate,
         },
-        payments:
-          advance > 0
-            ? {
-                create: [
-                  {
-                    paymentNumber: `PAY-${Date.now().toString().slice(-6)}`,
-                    amount: advance,
-                    paymentDate: new Date(validated.invoiceDate),
-                    paymentMethod: "Cash",
-                    reference: "Advance Payment",
-                    notes: "Initial advance payment recorded at invoice creation.",
-                  },
-                ],
-              }
-            : undefined,
+        payments: advancePayment,
       },
       include: {
         customer: true,
@@ -157,7 +171,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, invoice }, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to create invoice" }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: errMsg(error, "Failed to create invoice") }, { status: 400 });
   }
 }

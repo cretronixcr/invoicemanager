@@ -1,0 +1,15 @@
+# Never upload local secrets or build artifacts
+.env
+.env.*
+.vercel
+node_modules
+.next
+*.tsbuildinfo
+
+# Local database + E2E test artifacts
+prisma/dev.db
+prisma/dev.db-journal
+e2e/
+test-logo.png
+lint*.json
+devlog.txt
