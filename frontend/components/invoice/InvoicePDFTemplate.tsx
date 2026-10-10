@@ -29,6 +29,14 @@ interface InvoiceData {
   balance: number;
   notes?: string | null;
   items: InvoiceItem[];
+  payments?: {
+    id: string;
+    paymentNumber: string;
+    paymentDate: string | Date;
+    paymentMethod: string;
+    reference?: string | null;
+    amount: number;
+  }[];
   customer?: {
     name: string;
     customerCode?: string;
@@ -48,6 +56,8 @@ interface SettingsData {
   phone?: string;
   email?: string;
   website?: string | null;
+  ntn?: string | null;
+  strn?: string | null;
   currency?: string;
   defaultNotes?: string | null;
   footerText?: string | null;
@@ -177,6 +187,12 @@ export const InvoicePDFTemplate: React.FC<InvoicePDFTemplateProps> = ({
             <p>
               <span className="font-semibold text-neutral-800">Web</span>{" "}
               {settings.website}
+            </p>
+          )}
+          {(settings?.ntn || settings?.strn) && (
+            <p className="font-semibold text-neutral-700">
+              {settings.ntn && <span>NTN: {settings.ntn} </span>}
+              {settings.strn && <span>· STRN: {settings.strn}</span>}
             </p>
           )}
         </div>
@@ -437,6 +453,41 @@ export const InvoicePDFTemplate: React.FC<InvoicePDFTemplateProps> = ({
             </p>
           </div>
 
+          {/* Payment History Log (if payments exist) */}
+          {invoice.payments && invoice.payments.length > 0 && (
+            <div style={cardStyle} className="px-3 py-2 mt-2">
+              <div className="flex items-center justify-between mb-1">
+                <p className={labelCls} style={{ color: "#059669" }}>
+                  Payment Receipts ({invoice.payments.length})
+                </p>
+                <span className="text-[8.5px] font-bold text-neutral-400 uppercase tracking-wider">
+                  Settlement Trail
+                </span>
+              </div>
+              <div className="space-y-1 text-[9px]">
+                {invoice.payments.map((p, pIdx) => (
+                  <div
+                    key={p.id || pIdx}
+                    className="flex justify-between items-center text-neutral-600 border-b border-neutral-100 pb-0.5 last:border-0"
+                  >
+                    <span>
+                      <strong className="font-mono text-neutral-800">{p.paymentNumber}</strong>
+                      {" · "}
+                      {formatDate(p.paymentDate)}
+                      {" ("}
+                      {p.paymentMethod}
+                      {p.reference ? ` - ${p.reference}` : ""}
+                      {")"}
+                    </span>
+                    <span className="font-bold text-emerald-700 font-mono">
+                      {formatCurrency(p.amount, currency)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex-1" />
 
           <div className="pt-2">
@@ -547,18 +598,50 @@ export const InvoicePDFTemplate: React.FC<InvoicePDFTemplateProps> = ({
                   </tr>
                 )}
 
-                <tr style={{ backgroundColor: "#eef2ff" }}>
+                {(invoice.paidAmount ?? 0) > (invoice.advance || 0) && (
+                  <tr
+                    className="text-emerald-800 bg-emerald-50"
+                    style={{ borderBottom: "1px solid #e5e5e5" }}
+                  >
+                    <td className="py-[5px] px-3 font-medium">
+                      {invoice.advance > 0 ? "Subsequent Payments" : "Payments Received"}
+                    </td>
+                    <td
+                      className="py-[5px] px-3 text-right font-semibold"
+                      style={{ fontVariantNumeric: "tabular-nums" }}
+                    >
+                      - {formatCurrency((invoice.paidAmount ?? 0) - (invoice.advance || 0), currency)}
+                    </td>
+                  </tr>
+                )}
+
+                {(invoice.advance > 0 && (invoice.paidAmount ?? 0) > invoice.advance) && (
+                  <tr
+                    className="text-emerald-950 font-bold bg-emerald-100/70"
+                    style={{ borderBottom: "1px solid #e5e5e5" }}
+                  >
+                    <td className="py-[5px] px-3 text-[10px]">Total Paid to Date</td>
+                    <td
+                      className="py-[5px] px-3 text-right text-[11px]"
+                      style={{ fontVariantNumeric: "tabular-nums" }}
+                    >
+                      - {formatCurrency(invoice.paidAmount ?? 0, currency)}
+                    </td>
+                  </tr>
+                )}
+
+                <tr style={{ backgroundColor: (invoice.balance <= 0 || invoice.status === "Paid") ? "#ecfdf5" : "#eef2ff" }}>
                   <td
                     className="py-[6px] px-3 font-bold uppercase text-[10px] tracking-[0.05em]"
-                    style={{ color: "#2041ce" }}
+                    style={{ color: (invoice.balance <= 0 || invoice.status === "Paid") ? "#059669" : "#2041ce" }}
                   >
-                    Remaining Balance
+                    {(invoice.balance <= 0 || invoice.status === "Paid") ? "Status: PAID IN FULL" : "Remaining Balance"}
                   </td>
                   <td
                     className="py-[6px] px-3 text-right font-black text-[13px]"
-                    style={{ color: "#2041ce", fontVariantNumeric: "tabular-nums" }}
+                    style={{ color: (invoice.balance <= 0 || invoice.status === "Paid") ? "#059669" : "#2041ce", fontVariantNumeric: "tabular-nums" }}
                   >
-                    {formatCurrency(invoice.balance, currency)}
+                    {formatCurrency(invoice.balance <= 0 ? 0 : invoice.balance, currency)}
                   </td>
                 </tr>
               </tbody>

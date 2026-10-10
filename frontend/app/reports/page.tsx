@@ -20,18 +20,48 @@ function localYmd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+];
+
 function monthLabel(key: string): string {
   const [y, m] = key.split("-");
-  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${names[Number(m) - 1]} ${y.slice(2)}`;
+  return `${MONTH_NAMES[Number(m) - 1]} ${y.slice(2)}`;
+}
+
+function dayLabel(key: string): string {
+  const [y, m, d] = key.split("-");
+  return `${Number(d)} ${MONTH_NAMES[Number(m) - 1]}`;
+}
+
+function getWeekStart(d: Date): Date {
+  const date = new Date(d);
+  const day = date.getDay(); // 0 is Sunday, 1 is Monday...
+  const diff = date.getDate() - (day === 0 ? 6 : day - 1); // Monday as start of week
+  const mon = new Date(date);
+  mon.setDate(diff);
+  mon.setHours(0, 0, 0, 0);
+  return mon;
+}
+
+function weekRangeLabel(key: string): string {
+  const [y, m, d] = key.split("-");
+  const start = new Date(Number(y), Number(m) - 1, Number(d));
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return `${start.getDate()} ${MONTH_NAMES[start.getMonth()]} - ${end.getDate()} ${MONTH_NAMES[end.getMonth()]}`;
 }
 
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; view?: string }>;
 }) {
-  const { from, to } = await searchParams;
+  const { from, to, view = "daily" } = await searchParams;
+  const currentView = ["daily", "weekly", "monthly"].includes(view)
+    ? view
+    : "daily";
 
   // Keep stored statuses honest so the Overdue KPI is accurate.
   await syncInvoiceStatuses();
@@ -80,22 +110,79 @@ export default async function ReportsPage({
     }
   }
 
-  // ---- Monthly series (billed vs collected), capped at last 12 months ----
-  const monthMap = new Map<string, { billed: number; paid: number }>();
-  for (const inv of active) {
-    const key = `${inv.invoiceDate.getFullYear()}-${String(
-      inv.invoiceDate.getMonth() + 1
-    ).padStart(2, "0")}`;
-    const bucket = monthMap.get(key) || { billed: 0, paid: 0 };
-    bucket.billed += inv.total;
-    bucket.paid += inv.paidAmount;
-    monthMap.set(key, bucket);
+  // ---- Chart Series (Daily, Weekly, or Monthly) ----
+  type ChartPoint = {
+    key: string;
+    label: string;
+    tooltipLabel: string;
+    billed: number;
+    paid: number;
+  };
+  let chartPoints: ChartPoint[] = [];
+
+  if (currentView === "daily") {
+    // Daily series: Aggregate by YYYY-MM-DD
+    const dayMap = new Map<string, { billed: number; paid: number }>();
+    for (const inv of active) {
+      const key = localYmd(inv.invoiceDate);
+      const bucket = dayMap.get(key) || { billed: 0, paid: 0 };
+      bucket.billed += inv.total;
+      bucket.paid += inv.paidAmount;
+      dayMap.set(key, bucket);
+    }
+    chartPoints = [...dayMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-30) // Last 30 active days
+      .map(([key, v]) => ({
+        key,
+        label: dayLabel(key),
+        tooltipLabel: `Date: ${dayLabel(key)} (${key})`,
+        ...v,
+      }));
+  } else if (currentView === "weekly") {
+    // Weekly series: Aggregate by Monday of that week
+    const weekMap = new Map<string, { billed: number; paid: number }>();
+    for (const inv of active) {
+      const mon = getWeekStart(inv.invoiceDate);
+      const key = localYmd(mon);
+      const bucket = weekMap.get(key) || { billed: 0, paid: 0 };
+      bucket.billed += inv.total;
+      bucket.paid += inv.paidAmount;
+      weekMap.set(key, bucket);
+    }
+    chartPoints = [...weekMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-16) // Last 16 weeks
+      .map(([key, v]) => ({
+        key,
+        label: dayLabel(key),
+        tooltipLabel: `Week: ${weekRangeLabel(key)}`,
+        ...v,
+      }));
+  } else {
+    // Monthly series (billed vs collected), capped at last 12 months
+    const monthMap = new Map<string, { billed: number; paid: number }>();
+    for (const inv of active) {
+      const key = `${inv.invoiceDate.getFullYear()}-${String(
+        inv.invoiceDate.getMonth() + 1
+      ).padStart(2, "0")}`;
+      const bucket = monthMap.get(key) || { billed: 0, paid: 0 };
+      bucket.billed += inv.total;
+      bucket.paid += inv.paidAmount;
+      monthMap.set(key, bucket);
+    }
+    chartPoints = [...monthMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([key, v]) => ({
+        key,
+        label: monthLabel(key),
+        tooltipLabel: `Month: ${monthLabel(key)}`,
+        ...v,
+      }));
   }
-  const months = [...monthMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-12)
-    .map(([key, v]) => ({ key, label: monthLabel(key), ...v }));
-  const maxBar = Math.max(1, ...months.map((m) => Math.max(m.billed, m.paid)));
+
+  const maxBar = Math.max(1, ...chartPoints.map((m) => Math.max(m.billed, m.paid)));
 
   // ---- Top customers by revenue (in range) ----
   const customerMap = new Map<
@@ -151,14 +238,17 @@ export default async function ReportsPage({
 
   // ---- Preset ranges ----
   const today = new Date();
+  const todayStr = localYmd(today);
+  const thisWeekStart = getWeekStart(today);
+  const thisWeek = { from: localYmd(thisWeekStart), to: todayStr };
   const thisMonth = {
     from: localYmd(new Date(today.getFullYear(), today.getMonth(), 1)),
-    to: localYmd(today),
+    to: todayStr,
   };
   const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
   const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
   const lastMonth = { from: localYmd(lastMonthStart), to: localYmd(lastMonthEnd) };
-  const thisYear = { from: `${today.getFullYear()}-01-01`, to: localYmd(today) };
+  const thisYear = { from: `${today.getFullYear()}-01-01`, to: todayStr };
 
   const presetCls = (active: boolean) =>
     `px-3 py-1.5 rounded-full font-semibold transition-all ${
@@ -199,11 +289,23 @@ export default async function ReportsPage({
       {/* Filter Bar */}
       <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm flex flex-wrap items-end justify-between gap-4 text-xs">
         <div className="flex items-center gap-2 flex-wrap">
-          <Link href="/reports" className={presetCls(!hasRange)}>
+          <Link href={`/reports?view=${currentView}`} className={presetCls(!hasRange)}>
             All Time
           </Link>
           <Link
-            href={`/reports?from=${thisMonth.from}&to=${thisMonth.to}`}
+            href={`/reports?from=${todayStr}&to=${todayStr}&view=${currentView}`}
+            className={presetCls(from === todayStr && to === todayStr)}
+          >
+            Today
+          </Link>
+          <Link
+            href={`/reports?from=${thisWeek.from}&to=${thisWeek.to}&view=${currentView}`}
+            className={presetCls(from === thisWeek.from && to === thisWeek.to)}
+          >
+            This Week
+          </Link>
+          <Link
+            href={`/reports?from=${thisMonth.from}&to=${thisMonth.to}&view=${currentView}`}
             className={presetCls(
               from === thisMonth.from && to === thisMonth.to
             )}
@@ -211,7 +313,7 @@ export default async function ReportsPage({
             This Month
           </Link>
           <Link
-            href={`/reports?from=${lastMonth.from}&to=${lastMonth.to}`}
+            href={`/reports?from=${lastMonth.from}&to=${lastMonth.to}&view=${currentView}`}
             className={presetCls(
               from === lastMonth.from && to === lastMonth.to
             )}
@@ -219,7 +321,7 @@ export default async function ReportsPage({
             Last Month
           </Link>
           <Link
-            href={`/reports?from=${thisYear.from}&to=${thisYear.to}`}
+            href={`/reports?from=${thisYear.from}&to=${thisYear.to}&view=${currentView}`}
             className={presetCls(from === thisYear.from && to === thisYear.to)}
           >
             This Year
@@ -227,6 +329,7 @@ export default async function ReportsPage({
         </div>
 
         <form method="GET" className="flex items-end gap-2">
+          <input type="hidden" name="view" value={currentView} />
           <div>
             <label className="block text-[11px] font-semibold text-neutral-600 mb-1">
               From
@@ -257,7 +360,7 @@ export default async function ReportsPage({
           </button>
           {hasRange && (
             <Link
-              href="/reports"
+              href={`/reports?view=${currentView}`}
               className="px-3 py-2 text-neutral-500 hover:text-rose-600 font-medium rounded-xl transition-colors"
             >
               Clear
@@ -325,64 +428,117 @@ export default async function ReportsPage({
         </div>
       </div>
 
-      {/* Monthly Chart */}
+      {/* Sales Trend Chart (Daily vs Weekly vs Monthly Toggle) */}
       <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-indigo-600" />
-              <span>Monthly Sales Trend</span>
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-indigo-600" />
+                <span>
+                  {currentView === "daily"
+                    ? "Daily Sales & Collection Trend"
+                    : currentView === "weekly"
+                    ? "Weekly Sales & Collection Trend"
+                    : "Monthly Sales Trend"}
+                </span>
+              </h2>
+            </div>
             <p className="text-[11px] text-neutral-500 mt-0.5">
-              Billed vs collected per month {hasRange ? "in selected range" : ""}
+              {currentView === "daily"
+                ? "Daily breakdown of billed sales vs collections"
+                : currentView === "weekly"
+                ? "Weekly aggregated breakdown of billed sales vs collections"
+                : "Monthly billed sales vs collections"}{" "}
+              {hasRange ? "in selected range" : ""}
             </p>
           </div>
-          <div className="flex items-center gap-4 text-[11px] font-semibold">
-            <span className="flex items-center gap-1.5 text-neutral-600">
-              <span className="h-2.5 w-2.5 rounded-sm bg-indigo-500 inline-block" />
-              Billed
-            </span>
-            <span className="flex items-center gap-1.5 text-neutral-600">
-              <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500 inline-block" />
-              Collected
-            </span>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Daily vs Weekly vs Monthly Switcher */}
+            <div className="inline-flex p-0.5 rounded-xl bg-neutral-100 border border-neutral-200 text-xs">
+              {(["daily", "weekly", "monthly"] as const).map((mode) => {
+                const isActive = currentView === mode;
+                const label =
+                  mode === "daily"
+                    ? "Daily"
+                    : mode === "weekly"
+                    ? "Weekly"
+                    : "Monthly";
+                return (
+                  <Link
+                    key={mode}
+                    href={`/reports?${new URLSearchParams({
+                      ...(from ? { from } : {}),
+                      ...(to ? { to } : {}),
+                      view: mode,
+                    }).toString()}`}
+                    className={`px-3 py-1 rounded-lg font-semibold transition-all capitalize ${
+                      isActive
+                        ? "bg-white text-indigo-700 shadow-sm"
+                        : "text-neutral-500 hover:text-neutral-800"
+                    }`}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center gap-3 text-[11px] font-semibold pl-2 border-l border-neutral-200">
+              <span className="flex items-center gap-1.5 text-neutral-600">
+                <span className="h-2.5 w-2.5 rounded-sm bg-indigo-500 inline-block" />
+                Billed
+              </span>
+              <span className="flex items-center gap-1.5 text-neutral-600">
+                <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500 inline-block" />
+                Collected
+              </span>
+            </div>
           </div>
         </div>
 
-        {months.length === 0 ? (
+        {chartPoints.length === 0 ? (
           <div className="h-44 flex items-center justify-center text-xs text-neutral-400">
-            No invoices in this period.
+            No invoices found for this period.
           </div>
         ) : (
-          <div className="flex items-end gap-2 sm:gap-3 overflow-x-auto">
-            {months.map((m) => (
+          <div className="flex items-end gap-2 sm:gap-3 overflow-x-auto pt-2 pb-1">
+            {chartPoints.map((m) => (
               <div
                 key={m.key}
-                className="flex-1 min-w-[42px] flex flex-col items-center gap-1.5"
+                className="flex-1 min-w-[46px] flex flex-col items-center gap-1.5"
               >
                 <div className="w-full h-40 flex items-end justify-center gap-1">
                   <div
-                    title={`Billed: ${formatCurrency(m.billed, currency)}`}
-                    className="w-1/2 max-w-[20px] bg-indigo-500 rounded-t-md transition-all"
+                    title={`${m.tooltipLabel}\nBilled: ${formatCurrency(
+                      m.billed,
+                      currency
+                    )}`}
+                    className="w-1/2 max-w-[20px] bg-indigo-500 hover:bg-indigo-600 rounded-t-md transition-all cursor-pointer"
                     style={{
                       height: `${
                         m.billed > 0
-                          ? Math.max((m.billed / maxBar) * 100, 2)
+                          ? Math.max((m.billed / maxBar) * 100, 3)
                           : 0
                       }%`,
                     }}
                   />
                   <div
-                    title={`Collected: ${formatCurrency(m.paid, currency)}`}
-                    className="w-1/2 max-w-[20px] bg-emerald-500 rounded-t-md transition-all"
+                    title={`${m.tooltipLabel}\nCollected: ${formatCurrency(
+                      m.paid,
+                      currency
+                    )}`}
+                    className="w-1/2 max-w-[20px] bg-emerald-500 hover:bg-emerald-600 rounded-t-md transition-all cursor-pointer"
                     style={{
                       height: `${
-                        m.paid > 0 ? Math.max((m.paid / maxBar) * 100, 2) : 0
+                        m.paid > 0 ? Math.max((m.paid / maxBar) * 100, 3) : 0
                       }%`,
                     }}
                   />
                 </div>
-                <span className="text-[10px] text-neutral-500 font-medium text-center w-full truncate">
+                <span className="text-[10px] text-neutral-600 font-medium text-center w-full truncate">
                   {m.label}
                 </span>
               </div>

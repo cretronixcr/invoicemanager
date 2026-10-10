@@ -80,6 +80,8 @@ export const SettingsSchema = z.object({
   phone: z.string().min(5, "Phone is required"),
   email: z.string().email("Valid email required"),
   website: z.string().optional().nullable(),
+  ntn: z.string().optional().nullable(),
+  strn: z.string().optional().nullable(),
   invoicePrefix: z.string().default("INV-"),
   startingInvoiceNumber: z.number().int().min(1).default(1),
   quotationPrefix: z.string().default("QT-"),

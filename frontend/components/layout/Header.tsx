@@ -32,10 +32,10 @@ export function Header({
     .map((w) => w[0]?.toUpperCase())
     .join("");
 
-  // Debounced lookup against /api/search as the user types.
+  // Debounced lookup against /api/search as the user types (starts at 1 letter).
   const handleQueryChange = (value: string) => {
     setQuery(value);
-    if (value.trim().length < 2) {
+    if (value.trim().length === 0) {
       setResults({});
       setOpen(false);
     }
@@ -43,7 +43,7 @@ export function Header({
 
   useEffect(() => {
     const q = query.trim();
-    if (q.length < 2) return;
+    if (q.length === 0) return;
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
@@ -56,7 +56,7 @@ export function Header({
       } catch {
         /* ignore search failures */
       }
-    }, 250);
+    }, 150);
     return () => clearTimeout(timer);
   }, [query]);
 
@@ -111,7 +111,7 @@ export function Header({
           type="text"
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
-          onFocus={() => query.trim().length >= 2 && setOpen(true)}
+          onFocus={() => query.trim().length >= 1 && setOpen(true)}
           placeholder="Search invoices, clients, items..."
           className="w-full pl-9 pr-4 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-800 placeholder:text-neutral-400 transition-all focus:outline-none focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
         />

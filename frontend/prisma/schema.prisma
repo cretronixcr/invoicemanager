@@ -53,7 +53,7 @@ model Quotation {
   id              String          @id @default(cuid())
   quotationNumber String          @unique // e.g. 0000200 or QT-000200
   customerId      String
-  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   date            DateTime        @default(now())
   subtotal        Decimal           @default(0)
   discount        Decimal           @default(0)
@@ -87,7 +87,7 @@ model Invoice {
   quotationId       String?
   quotation         Quotation?    @relation(fields: [quotationId], references: [id], onDelete: SetNull)
   customerId        String
-  customer          Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer          Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
   invoiceDate       DateTime      @default(now())
   dueDate           DateTime?
   referenceNumber   String?
@@ -143,6 +143,8 @@ model BusinessSettings {
   phone                 String   @default("0333 1360441")
   email                 String   @default("sales@danibrothers.com")
   website               String?  @default("www.danibrothers.com")
+  ntn                   String?
+  strn                  String?
   invoicePrefix         String   @default("INV-")
   startingInvoiceNumber Int      @default(1)
   quotationPrefix       String   @default("QT-")

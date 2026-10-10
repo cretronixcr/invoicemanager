@@ -40,6 +40,8 @@ interface SettingsData {
   phone?: string;
   email?: string;
   website?: string | null;
+  ntn?: string | null;
+  strn?: string | null;
   currency?: string;
   defaultNotes?: string | null;
   footerText?: string | null;
@@ -160,6 +162,12 @@ export const QuotationPDFTemplate: React.FC<QuotationPDFTemplateProps> = ({
             <p>
               <span className="font-semibold text-neutral-800">Web</span>{" "}
               {settings.website}
+            </p>
+          )}
+          {(settings?.ntn || settings?.strn) && (
+            <p className="font-semibold text-neutral-700">
+              {settings.ntn && <span>NTN: {settings.ntn} </span>}
+              {settings.strn && <span>· STRN: {settings.strn}</span>}
             </p>
           )}
         </div>

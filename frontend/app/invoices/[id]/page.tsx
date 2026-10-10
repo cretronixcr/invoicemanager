@@ -15,10 +15,11 @@ import {
   Copy,
   Trash2,
   CheckCircle,
-  MessageCircle,
-  Mail,
-  Link2,
+  FileText,
 } from "lucide-react";
+import { PaymentReceiptModal } from "@/components/payment/PaymentReceiptModal";
+import { PaymentReceiptData } from "@/components/payment/PaymentReceiptTemplate";
+import { RecordPaymentModal } from "@/components/payment/RecordPaymentModal";
 
 type InvoiceDetail =
   React.ComponentProps<typeof InvoicePDFTemplate>["invoice"] & {
@@ -53,61 +54,8 @@ export default function InvoiceDetailPage({
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<PaymentReceiptData | null>(null);
 
-  const buildShare = () => {
-    if (!invoice?.customer) return null;
-    const url = `${window.location.origin}/invoices/${invoice.id}`;
-    const text = [
-      `Invoice ${invoice.invoiceNumber} — ${settings?.businessName || "DANI BROTHERS"}`,
-      `Customer: ${invoice.customer.name}`,
-      `Total: ${formatCurrency(invoice.total, settings?.currency)}`,
-      `Paid: ${formatCurrency(invoice.paidAmount, settings?.currency)}`,
-      `Balance: ${formatCurrency(invoice.balance, settings?.currency)}`,
-      "",
-      url,
-    ].join("\n");
-    return { url, text };
-  };
-
-  const handleWhatsApp = () => {
-    const share = buildShare();
-    const phone = invoice?.customer?.phone;
-    if (!share || !phone) return;
-    const digits = phone.replace(/\D/g, "");
-    let intl = digits;
-    if (intl.startsWith("0")) intl = `92${intl.slice(1)}`;
-    else if (!intl.startsWith("92")) intl = `92${intl}`;
-    window.open(
-      `https://wa.me/${intl}?text=${encodeURIComponent(share.text)}`,
-      "_blank",
-      "noopener"
-    );
-  };
-
-  const handleEmail = () => {
-    const share = buildShare();
-    if (!share) return;
-    const subject = `Invoice ${invoice?.invoiceNumber} — ${
-      settings?.businessName || "DANI BROTHERS"
-    }`;
-    const to = invoice?.customer?.email || "";
-    window.location.href = `mailto:${to}?subject=${encodeURIComponent(
-      subject
-    )}&body=${encodeURIComponent(share.text)}`;
-  };
-
-  const handleCopyLink = async () => {
-    const share = buildShare();
-    if (!share) return;
-    try {
-      await navigator.clipboard.writeText(share.url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      window.prompt("Copy invoice link:", share.url);
-    }
-  };
 
   const fetchInvoice = async () => {
     try {
@@ -348,39 +296,6 @@ export default function InvoiceDetailPage({
             <span>Print Invoice</span>
           </button>
 
-          {invoice.customer?.phone && (
-            <button
-              onClick={handleWhatsApp}
-              title="Share on WhatsApp"
-              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 ring-1 ring-inset ring-emerald-600/20 font-semibold rounded-xl transition-colors"
-            >
-              <MessageCircle className="w-3.5 h-3.5" />
-              <span>WhatsApp</span>
-            </button>
-          )}
-
-          <button
-            onClick={handleEmail}
-            title={
-              invoice.customer?.email
-                ? "Email invoice summary"
-                : "No email on file — opens blank mail app"
-            }
-            className="flex items-center gap-1.5 px-3 py-2 bg-sky-50 hover:bg-sky-600 hover:text-white text-sky-700 ring-1 ring-inset ring-sky-600/20 font-semibold rounded-xl transition-colors"
-          >
-            <Mail className="w-3.5 h-3.5" />
-            <span>Email</span>
-          </button>
-
-          <button
-            onClick={handleCopyLink}
-            title="Copy shareable invoice link"
-            className="flex items-center gap-1.5 px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold rounded-xl transition-colors"
-          >
-            <Link2 className="w-3.5 h-3.5" />
-            <span>{copied ? "Copied!" : "Copy Link"}</span>
-          </button>
-
           <Link
             href={`/invoices/new?editId=${invoice.id}`}
             className="flex items-center gap-1 px-3 py-2 text-neutral-500 hover:text-indigo-600 hover:bg-indigo-50 font-medium rounded-xl transition-colors"
@@ -438,14 +353,48 @@ export default function InvoiceDetailPage({
                       {formatCurrency(p.amount, settings?.currency)}
                     </td>
                     <td className="py-2 px-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePayment(p.id, p.paymentNumber)}
-                        title="Delete this payment (void)"
-                        className="p-1.5 rounded-lg text-neutral-400 bg-neutral-100 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedReceipt({
+                              id: p.id,
+                              paymentNumber: p.paymentNumber,
+                              paymentDate: p.paymentDate,
+                              amount: p.amount,
+                              paymentMethod: p.paymentMethod,
+                              reference: p.reference,
+                              invoice: {
+                                id: invoice.id,
+                                invoiceNumber: invoice.invoiceNumber || "INV",
+                                invoiceDate: invoice.invoiceDate,
+                                total: invoice.total,
+                                paidAmount: invoice.paidAmount,
+                                balance: invoice.balance,
+                                customer: invoice.customer || {
+                                  name: "WALK-IN CUSTOMER",
+                                  address: "N/A",
+                                  city: "Karachi",
+                                  phone: "N/A",
+                                },
+                              },
+                            });
+                          }}
+                          title="View & Print Official Payment Receipt"
+                          className="p-1.5 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-colors inline-flex items-center gap-1 font-semibold text-[11px]"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Receipt</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => p.id && handleDeletePayment(p.id, p.paymentNumber)}
+                          title="Delete this payment (void)"
+                          className="p-1.5 rounded-lg text-neutral-400 bg-neutral-100 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -471,83 +420,35 @@ export default function InvoiceDetailPage({
       </div>
 
       {/* Record Payment Modal */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-md p-6">
-            <h2 className="text-base font-bold text-neutral-900 mb-1">
-              Record Invoice Payment
-            </h2>
-            <p className="text-xs text-neutral-500 mb-4">
-              Invoice: {invoice.invoiceNumber} • Outstanding Balance:{" "}
-              <strong className="text-rose-600 tabular-nums">
-                {formatCurrency(invoice.balance, settings?.currency)}
-              </strong>
-            </p>
+      {showPaymentModal && invoice && (
+        <RecordPaymentModal
+          invoiceData={{
+            id: invoice.id,
+            invoiceNumber: invoice.invoiceNumber || "INV",
+            total: invoice.total,
+            paidAmount: invoice.paidAmount || 0,
+            balance: invoice.balance,
+            invoiceDate: invoice.invoiceDate || new Date().toISOString(),
+            status: invoice.status || "Issued",
+            customer: invoice.customer,
+          }}
+          settings={settings}
+          onClose={() => setShowPaymentModal(false)}
+          onSuccess={async (newReceipt) => {
+            setShowPaymentModal(false);
+            await fetchInvoice();
+            setSelectedReceipt(newReceipt);
+          }}
+        />
+      )}
 
-            <form onSubmit={handleRecordPayment} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">
-                  Payment Amount ({settings?.currency || "PKR"})
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  max={invoice.balance}
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                  className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900 font-bold"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">
-                  Payment Method
-                </label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900"
-                >
-                  <option value="Cash">Cash</option>
-                  <option value="Bank Transfer">Bank Transfer</option>
-                  <option value="Cheque">Cheque</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">
-                  Reference / Txn ID
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Meezan Bank Txn #123456"
-                  value={paymentReference}
-                  onChange={(e) => setPaymentReference(e.target.value)}
-                  className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-neutral-200">
-                <button
-                  type="button"
-                  onClick={() => setShowPaymentModal(false)}
-                  className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-medium rounded-xl transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingPayment}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-sm shadow-emerald-600/30 transition-all active:translate-y-px disabled:opacity-60"
-                >
-                  {submittingPayment ? "Recording..." : "Save Payment"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Payment Receipt Modal */}
+      {selectedReceipt && (
+        <PaymentReceiptModal
+          payment={selectedReceipt}
+          settings={settings}
+          onClose={() => setSelectedReceipt(null)}
+        />
       )}
     </div>
   );

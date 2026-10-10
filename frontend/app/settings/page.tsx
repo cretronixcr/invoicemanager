@@ -38,6 +38,8 @@ export default function SettingsPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [website, setWebsite] = useState("");
+  const [ntn, setNtn] = useState("");
+  const [strn, setStrn] = useState("");
   const [currency, setCurrency] = useState("PKR");
   const [invoicePrefix, setInvoicePrefix] = useState("INV-");
   const [startingInvoiceNumber, setStartingInvoiceNumber] = useState(1);
@@ -123,6 +125,8 @@ export default function SettingsPage() {
           setPhone(s.phone || "0333 1360441");
           setEmail(s.email || "sales@danibrothers.com");
           setWebsite(s.website || "www.danibrothers.com");
+          setNtn(s.ntn || "");
+          setStrn(s.strn || "");
           setCurrency(s.currency || "PKR");
           setInvoicePrefix(s.invoicePrefix || "INV-");
           setStartingInvoiceNumber(s.startingInvoiceNumber || 1);
@@ -156,6 +160,8 @@ export default function SettingsPage() {
           phone,
           email,
           website: website || null,
+          ntn: ntn || null,
+          strn: strn || null,
           currency,
           invoicePrefix,
           startingInvoiceNumber: Number(startingInvoiceNumber),
@@ -294,6 +300,32 @@ export default function SettingsPage() {
                 value={website}
                 onChange={(e) => setWebsite(e.target.value)}
                 className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-neutral-700 mb-1">
+                NTN (National Tax Number)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 1234567-8"
+                value={ntn}
+                onChange={(e) => setNtn(e.target.value)}
+                className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-neutral-700 mb-1">
+                STRN (Sales Tax Reg. No)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 12-34-5678-901-23"
+                value={strn}
+                onChange={(e) => setStrn(e.target.value)}
+                className="w-full p-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900 font-mono"
               />
             </div>
           </div>

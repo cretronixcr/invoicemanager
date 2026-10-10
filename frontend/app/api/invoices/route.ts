@@ -77,6 +77,23 @@ export async function POST(request: Request) {
     const body = await request.json();
     const validated = InvoiceSchema.parse(body);
 
+    // Guard against duplicate quotation conversion (prevents double billing)
+    if (validated.quotationId) {
+      const existingLinkedInvoice = await prisma.invoice.findFirst({
+        where: { quotationId: validated.quotationId },
+        select: { id: true, invoiceNumber: true },
+      });
+      if (existingLinkedInvoice) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Quotation is already converted to Invoice ${existingLinkedInvoice.invoiceNumber}. To prevent duplicate billing, record additional payments against the existing invoice instead of generating a new invoice.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Sequential number — max(existing) + 1, so deletions never cause reuse.
     let invoiceNumber = validated.invoiceNumber;
     if (!invoiceNumber) {

@@ -51,14 +51,14 @@ button:not(:disabled),
   scrollbar-color: #a3a3a3 transparent;
 }
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: #c4c4c4;
+  background-color: #d4d4d4;
   border-radius: 9999px;
   border: 2px solid transparent;
   background-clip: padding-box;
@@ -71,7 +71,7 @@ button:not(:disabled),
 @keyframes page-enter {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -79,9 +79,43 @@ button:not(:disabled),
   }
 }
 
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.02);
+  }
+}
+
+/* Premium Card & Glassmorphism Utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(229, 231, 235, 0.8);
+}
+
+.card-hover-lift {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+}
+
+.table-row-hover {
+  transition: background-color 0.15s ease;
+}
+.table-row-hover:hover {
+  background-color: #f8fafc;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .page-enter {
-    animation: page-enter 0.22s ease-out;
+    animation: page-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
 }
 

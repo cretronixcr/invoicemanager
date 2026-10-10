@@ -165,6 +165,59 @@ async function exportProducts(): Promise<NextResponse> {
   return csvResponse(lines, `products-${stamp}.csv`);
 }
 
+async function exportPayments(from: Date | null, to: Date | null): Promise<NextResponse> {
+  const payments = await prisma.payment.findMany({
+    where: {
+      AND: [
+        from || to
+          ? { paymentDate: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
+          : {},
+      ],
+    },
+    include: {
+      invoice: {
+        include: { customer: true },
+      },
+    },
+    orderBy: { paymentDate: "asc" },
+  });
+
+  const lines = [
+    [
+      "Payment ID",
+      "Date",
+      "Invoice Number",
+      "Customer",
+      "Client ID",
+      "Payment Method",
+      "Amount Received",
+      "Reference",
+      "Notes",
+    ].map(csvCell).join(","),
+  ];
+
+  for (const p of payments) {
+    lines.push(
+      [
+        p.paymentNumber,
+        p.paymentDate.toISOString().slice(0, 10),
+        p.invoice.invoiceNumber,
+        p.invoice.customer.name,
+        p.invoice.customer.customerCode,
+        p.paymentMethod,
+        p.amount,
+        p.reference || "",
+        p.notes || "",
+      ]
+        .map(csvCell)
+        .join(",")
+    );
+  }
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  return csvResponse(lines, `payments-${stamp}.csv`);
+}
+
 export async function GET(request: Request) {
   const session = await requireApiSession();
   if (session instanceof NextResponse) return session;
@@ -176,6 +229,7 @@ export async function GET(request: Request) {
 
     if (type === "customers") return await exportCustomers();
     if (type === "products") return await exportProducts();
+    if (type === "payments") return await exportPayments(from, to);
     return await exportInvoices(from, to);
   } catch (error) {
     const msg = error instanceof Error ? errMsg(error) : "Export failed";

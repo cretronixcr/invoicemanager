@@ -73,6 +73,21 @@ export async function DELETE(
   if (session instanceof NextResponse) return session;
   try {
     const { id } = await params;
+    const [invoiceCount, quotationCount] = await Promise.all([
+      prisma.invoice.count({ where: { customerId: id } }),
+      prisma.quotation.count({ where: { customerId: id } }),
+    ]);
+
+    if (invoiceCount > 0 || quotationCount > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cannot delete customer: they have ${invoiceCount} invoice(s) and ${quotationCount} quotation(s). Please archive or remove their records first to prevent financial data loss.`,
+        },
+        { status: 400 }
+      );
+    }
+
     await prisma.customer.delete({ where: { id } });
     return NextResponse.json({ success: true, message: "Customer deleted successfully" });
   } catch (error) {

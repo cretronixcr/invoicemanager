@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { PaymentRowActions } from "@/components/payment/PaymentRowActions";
+import { RecordPaymentButton } from "@/components/payment/RecordPaymentButton";
 import { CreditCard } from "lucide-react";
 
 export const revalidate = 0;
@@ -33,13 +34,22 @@ export default async function PaymentsPage() {
             Complete transaction ledger for advances and invoice settlements.
           </p>
         </div>
-        <div className="bg-white/80 px-4 py-2 rounded-xl border border-emerald-200/70 shadow-sm">
-          <span className="text-[11px] font-semibold text-emerald-800 uppercase block">
-            Total Revenue Collected
-          </span>
-          <span className="text-lg font-black text-emerald-700 tabular-nums">
-            {formatCurrency(totalCollected, currency)}
-          </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <RecordPaymentButton settings={settings || undefined} />
+          <a
+            href="/api/reports/export?type=payments"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-neutral-50 text-neutral-700 font-semibold text-xs rounded-xl border border-neutral-300 shadow-sm transition-colors"
+          >
+            <span>Export CSV</span>
+          </a>
+          <div className="bg-white/80 px-4 py-2 rounded-xl border border-emerald-200/70 shadow-sm">
+            <span className="text-[11px] font-semibold text-emerald-800 uppercase block">
+              Total Revenue Collected
+            </span>
+            <span className="text-lg font-black text-emerald-700 tabular-nums">
+              {formatCurrency(totalCollected, currency)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -111,6 +121,8 @@ export default async function PaymentsPage() {
                       <PaymentRowActions
                         paymentId={p.id}
                         paymentNumber={p.paymentNumber}
+                        paymentData={p}
+                        settings={settings || undefined}
                       />
                     </td>
                   </tr>

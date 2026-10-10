@@ -2,7 +2,8 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Users, Plus, Search, Edit, Trash2, Phone, Mail, MapPin, Download } from "lucide-react";
+import Link from "next/link";
+import { Users, Plus, Search, Edit, Trash2, Phone, Mail, MapPin, Download, BookOpen } from "lucide-react";
 
 const PAGE_SIZE = 20;
 
@@ -228,9 +229,16 @@ function CustomersPageInner() {
               <div>
                 <div className="flex items-start justify-between">
                   <div>
-                    <h2 className="font-bold text-neutral-900 text-sm">{c.name}</h2>
+                    <Link
+                      href={`/customers/${c.id}`}
+                      className="font-bold text-neutral-900 text-sm hover:text-indigo-600 transition-colors inline-block"
+                    >
+                      {c.name}
+                    </Link>
                     <p className="text-[11px] font-semibold text-indigo-600">
-                      Client ID: {c.customerCode}
+                      <Link href={`/customers/${c.id}`} className="hover:underline">
+                        Client ID: {c.customerCode}
+                      </Link>
                     </p>
                   </div>
                   {c.companyName && (
@@ -264,6 +272,14 @@ function CustomersPageInner() {
                 </span>
 
                 <div className="flex items-center gap-2">
+                  <Link
+                    href={`/customers/${c.id}`}
+                    className="p-1.5 rounded-lg text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors flex items-center gap-1 font-semibold text-[11px]"
+                    title="View Customer Ledger & Statement (کھاتا)"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Ledger</span>
+                  </Link>
                   <button
                     onClick={() => handleOpenEdit(c)}
                     className="p-1.5 rounded-lg text-neutral-500 bg-neutral-100 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
